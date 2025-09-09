@@ -10,13 +10,13 @@
 HX711 scale;
 
 // Button
-#define TARE_BUTTON D4  // GPIO2
+#define TARE_BUTTON D0
 unsigned long lastButtonPress = 0;
 const unsigned long debounceTime = 300; // ms
 boolean       buttonState     = false;
 
 // Kalibrierfaktor (anpassen!)
-float calibration_factor = -21;
+float calibration_factor = -21; // -837.8887096774194; // -21;
 
 // -------------------- Display Setup --------------------
 TFT_eSPI tft = TFT_eSPI();  // Pins aus User_Setup.h
@@ -43,7 +43,6 @@ void setup() {
 
   // Button
   pinMode(TARE_BUTTON, INPUT);
-  getButtonState();
 
   // HX711 initialisieren
   scale.begin(HX711_DT, HX711_SCK);
@@ -66,37 +65,36 @@ void setup() {
 
 // -------------------- Loop --------------------
 void loop() {
-  float gewicht = scale.get_units(5); // Mittelwert über 5 Messungen
+  float gewicht = scale.get_units(5) / 1000; // Mittelwert über 5 Messungen
   float raw = scale.read_average(5);
+  float value = scale.get_value(5);
 
   // Serial Ausgabe
-  Serial.printf("Gewicht: %.1f g\n", gewicht);
-  Serial.printf("Raw: %.1f \n", raw);
+  Serial.printf("Gewicht: %.1f kg\n", gewicht);
+  Serial.printf("Raw: %.2f \n", raw);
+  Serial.printf("Value: %.1f \n", value);
   Serial.println(" ");
 
   // TFT Ausgabe
   tft.fillScreen(TFT_BLACK);
   tft.setCursor(10, 40, 2);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
   tft.println("Gewicht:");
 
-  tft.setCursor(10, 80, 4);
+  tft.setCursor(10, 80, 2);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.printf("%.1f g", gewicht);
+  tft.printf("%.2f kg", gewicht);
 
   // --- Button check ---
-  if ( getButtonState() == true) { // gedrückt (gegen GND)
+  if ( digitalRead(TARE_BUTTON) == true) { // gedrückt (gegen GND)
       scale.tare();
       Serial.println("Tare per Button ausgeführt.");
       tft.setCursor(10, 10, 2);
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.setTextSize(2);
       tft.println("Tariert");
       delay(600);
       tft.setCursor(10, 10, 2);
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.setTextSize(2);
       tft.println("        ");
     
   }
