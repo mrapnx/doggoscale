@@ -21,15 +21,24 @@ float calibration_factor = -21; // -837.8887096774194; // -21;
 // -------------------- Display Setup --------------------
 TFT_eSPI tft = TFT_eSPI();  // Pins aus User_Setup.h
 
-boolean getButtonState();
+boolean getTareButtonState();
 
-boolean getButtonState() {
+boolean getTareButtonState() {
   boolean newState;
   newState = digitalRead(TARE_BUTTON);
   if (!newState == buttonState) {
     buttonState = newState;
-    Serial.print("  Knopf betätigt: ");
-    Serial.println(int(buttonState));
+    if (buttonState == 1) {
+      scale.tare();
+      Serial.println("Tariere");
+      tft.setCursor(10, 10, 2);
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.println("Tariert");
+      delay(600);
+      tft.setCursor(10, 10, 2);
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.println("        ");
+    }
     return true;
   } else {
     return false;
@@ -86,18 +95,6 @@ void loop() {
   tft.printf("%.2f kg", gewicht);
 
   // --- Button check ---
-  if ( digitalRead(TARE_BUTTON) == true) { // gedrückt (gegen GND)
-      scale.tare();
-      Serial.println("Tare per Button ausgeführt.");
-      tft.setCursor(10, 10, 2);
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.println("Tariert");
-      delay(600);
-      tft.setCursor(10, 10, 2);
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.println("        ");
-    
-  }
+  getTareButtonState(); 
 
-  delay(500);
 }
