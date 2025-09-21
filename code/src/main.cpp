@@ -5,16 +5,14 @@
 #include <SPI.h>
 
 // -------------------- HX711 Setup --------------------
-#define HX711_DT D1 
-#define HX711_SCK D0
+#define HX711_SCK D1
+#define HX711_DT  D2 
 
 HX711 scale;
 boolean scalePresent = false;
 
 // Button
-#define TARE_BUTTON D2
-#define BUTTON_2    D9   // TODO: Wenn der ESP aufwacht und der Pin angeschlossen ist, klappt es nicht. Nur, wenn man den Pin nach dem Aufwache nanschließt :/
-//#define BUTTON_3  D10
+#define TARE_BUTTON D0
 std::map<uint8_t, unsigned long> lastButtonPress;
 
 const unsigned long debounceTime = 300; // ms
@@ -76,8 +74,6 @@ void setup() {
 
   // Button
   pinMode(TARE_BUTTON, INPUT);
-  pinMode(BUTTON_2, INPUT);
-//  pinMode(BUTTON_3, INPUT);
 
   // Display initialisieren
   tft.init();
@@ -87,13 +83,12 @@ void setup() {
   tft.setTextSize(2);
 
   // HX711 initialisieren
-  tft.setCursor(0, 0);
+  tft.setCursor(0, 0, 2);
   tft.println("Warte auf Waage...");
   Serial.println("Initialisiere Waage");
   scale.begin(HX711_DT, HX711_SCK);
 
   while (!scale.is_ready()) {
-    tft.setCursor(0, 0);
     Serial.println("Warte auf Waage...");
     delay(100);
   }
@@ -102,14 +97,15 @@ void setup() {
   scale.tare();
   scalePresent = true;
   Serial.println("HX711 bereit, Nullpunkt gesetzt.");
-  tft.setCursor(0, 0);
+  tft.setCursor(0, 0, 2);
   tft.println("Waage bereit...       ");
+  delay(1000);
+  tft.fillScreen(TFT_BLACK);
 
 }
 
 // -------------------- Loop --------------------
 void loop() {
-  scalePresent = false; // DEBUG
   if (scalePresent) {
     float gewicht = scale.get_units(5) / 1000; // Mittelwert über 5 Messungen
     float raw = scale.read_average(5);
@@ -123,20 +119,17 @@ void loop() {
 
     // TFT Ausgabe
     tft.setTextSize(2);
-    tft.fillScreen(TFT_BLACK);
     tft.setCursor(10, 40, 2);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.println("Gewicht:");
+    tft.println("Gewicht:"); // Passt in Größe 2 gerade so aufs Display
 
-    tft.setCursor(10, 80, 2);
+    tft.setCursor(0, 80, 2);
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.printf("%.2f kg", gewicht);
+    tft.fillRect(130, 130, 160, 160, TFT_BLACK); //TODO: Letzte Pixel wegkratzen
+    tft.printf("%6.2f kg", gewicht);
 
     // --- Button check ---
     getTareButtonState(); 
   }
   getButtonState(TARE_BUTTON);
-  getButtonState(BUTTON_2);
-//  getButtonState(BUTTON_3);
-  delay(200);
 }
