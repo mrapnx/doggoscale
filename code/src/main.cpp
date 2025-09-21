@@ -5,16 +5,16 @@
 #include <SPI.h>
 
 // -------------------- HX711 Setup --------------------
-#define HX711_DT D2  // GPIO4
-#define HX711_SCK D1 // GPIO5
+#define HX711_DT D1 
+#define HX711_SCK D0
 
 HX711 scale;
 boolean scalePresent = false;
 
 // Button
-#define TARE_BUTTON D0
-#define BUTTON_2    D3   // TODO: Wenn der ESP aufwacht und der Pin angeschlossen ist, klappt es nicht. Nur, wenn man den Pin nach dem Aufwache nanschließt :/
-//#define BUTTON_3    D4
+#define TARE_BUTTON D2
+#define BUTTON_2    D9   // TODO: Wenn der ESP aufwacht und der Pin angeschlossen ist, klappt es nicht. Nur, wenn man den Pin nach dem Aufwache nanschließt :/
+//#define BUTTON_3  D10
 std::map<uint8_t, unsigned long> lastButtonPress;
 
 const unsigned long debounceTime = 300; // ms
@@ -109,6 +109,7 @@ void setup() {
 
 // -------------------- Loop --------------------
 void loop() {
+  scalePresent = false; // DEBUG
   if (scalePresent) {
     float gewicht = scale.get_units(5) / 1000; // Mittelwert über 5 Messungen
     float raw = scale.read_average(5);
@@ -133,7 +134,9 @@ void loop() {
 
     // --- Button check ---
     getTareButtonState(); 
-    getButtonState(BUTTON_2);
- //   getButtonState(BUTTON_3);
   }
+  getButtonState(TARE_BUTTON);
+  getButtonState(BUTTON_2);
+//  getButtonState(BUTTON_3);
+  delay(200);
 }
