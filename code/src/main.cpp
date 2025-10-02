@@ -1,89 +1,211 @@
 #include <Arduino.h>
-#include <map>
-#include <HX711.h>
-#include <TFT_eSPI.h>
 #include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ILI9341.h>
+#include <XPT2046_Touchscreen.h>
+#include <EEPROM.h>
+#include <HX711.h>
 
-// -------------------- HX711 Setup --------------------
-#define HX711_SCK D1
-#define HX711_DT  D2 
+// --- Pin-Definitionen  ---
+
+// DISPLAY + TOUCH
+//#define TOUCH_IRQ   -    // IRQ Pin für Touchscreen, hier unbenutzt
+//#define TOUCH_D0    D6   // (MISO)
+//#define TOUCH_DIN   D7   // (MOSI)
+  #define TOUCH_CS    D0   
+//#define TOUCH_CLK   D5   // (SCK) 
+
+//#define MISO        D6    // GPIO12 // TFT_MISO
+//#define LED         3V
+//#define SCK         D5    // GPIO14 // TFT_SCLK 
+//#define MOSI        D7    // GPIO13 // SDI MOSI
+  #define TFT_DC      D3    
+  #define TFT_RST     D4    
+  #define TFT_CS      D8    
+//#define GND         G
+//#define VCC         3V
+
+// Wägezellencontroller HX711
+//#define VCC         3V
+  #define HX711_SCK   D1
+  #define HX711_DT    D2 
+//#define GND         G
+
+// Datenstruktur für die Werte
+struct CalibrationData {
+  char    head           [5]  = "MRAb";
+  int     tsMinX              = 384;
+  int     tsMaxX              = 3503;
+  int     tsMinY              = 544;
+  int     tsMaxY              = 3610;
+  float   scaleCalibration    = -21; // -837.8887096774194; // -21;
+  char    foot           [5]  = "MRAe";
+};
+CalibrationData calib;
+
+// -- Waage --------------------
 
 HX711 scale;
 boolean scalePresent = false;
 
-// Button
-#define TARE_BUTTON D0
-std::map<uint8_t, unsigned long> lastButtonPress;
+// -- TFT + Touch Objekte --------------------
+Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
+XPT2046_Touchscreen ts(TOUCH_CS);
 
-const unsigned long debounceTime = 300; // ms
-boolean       buttonState     = false;
+// --- Speicher --------------------
+#define EEPROM_SIZE 64
+#define EEPROM_ADDR 0
 
-// Kalibrierfaktor (anpassen!)
-float calibration_factor = -21; // -837.8887096774194; // -21;
+// --- GUI Struktur --------------------
+typedef void (*CallbackFn)();
 
-// -------------------- Display Setup --------------------
-TFT_eSPI tft = TFT_eSPI();  // Pins aus User_Setup.h
+struct GuiBox {
+  int x, y, w, h;
+  const char *label;
+  uint16_t color;
+  CallbackFn onTouch;
+};
 
-boolean getTareButtonState();
-boolean getButtonState(uint8_t buttonPin);
+// --- Forward-Deklarationen --------------------
+void calibrateTouch();
+void drawBox(const GuiBox &box);
+void drawGui();
+void handleTouch(int tx, int ty);
 
-boolean getTareButtonState() {
-  boolean newState;
-  newState = digitalRead(TARE_BUTTON);
-  if (!newState == buttonState) {
-    buttonState = newState;
-    if (buttonState == 1) {
-      scale.tare();
-      Serial.println("Tariere");
-      tft.setCursor(10, 10, 2);
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.println("Tariert");
-      delay(600);
-      tft.setCursor(10, 10, 2);
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.println("        ");
-    }
-    return true;
-  } else {
-    return false;
+// Forward-Deklarationen der Callback-Funktionen
+void onBoxTara();
+
+
+// --- Zentrales Array mit allen Boxen ---
+GuiBox guiBoxes[] = {
+// x,   y,   w,   h,  label,   color,        onTouch
+  {200,  40, 80, 160, "Tara", ILI9341_GREEN,  onBoxTara},
+
+
+};
+const int NUM_BOXES = sizeof(guiBoxes) / sizeof(guiBoxes[0]);
+
+// -- GUI Funktionen ---
+void drawBox(const GuiBox &box) {
+  tft.drawRect(box.x, box.y, box.w, box.h, box.color);
+  tft.setCursor(box.x + 5, box.y + box.h / 2 - 8);
+  tft.setTextColor(box.color);
+  tft.setTextSize(2);
+  tft.print(box.label);
+}
+
+void drawGui() {
+  for (int i = 0; i < NUM_BOXES; i++) {
+    drawBox(guiBoxes[i]);
   }
 }
 
-boolean getButtonState(uint8_t buttonPin) {
-  boolean newState;
-  newState = digitalRead(buttonPin);
-  if (!newState == lastButtonPress[buttonPin]) {
-    lastButtonPress[buttonPin] = newState;
-    if (lastButtonPress[buttonPin] == 1) {
-      Serial.print("Button ");
-      Serial.print(buttonPin);
-      Serial.println(" gedrückt");
+void handleTouch(int tx, int ty) {
+  for (int i = 0; i < NUM_BOXES; i++) {
+    GuiBox &b = guiBoxes[i];
+    if (tx >= b.x && tx <= b.x + b.w &&
+        ty >= b.y && ty <= b.y + b.h) {
+      if (b.onTouch) b.onTouch();
     }
-    return true;
-  } else {
-    return false;
   }
 }
 
-// -------------------- Setup --------------------
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println(" ");
-  Serial.println("Aufgewacht");
+// --- GUI Callback-Funktionen ---
+void onBoxTara() {
+  scale.tare();
+  tft.setCursor(10, 210);
+  tft.setTextColor(ILI9341_GREEN);
+  tft.setTextSize(2);
+  tft.println("Tariert");
+  delay(1000);
+  tft.setCursor(10, 210);
+  tft.println("            ");
+}
 
-  // Button
-  pinMode(TARE_BUTTON, INPUT);
 
-  // Display initialisieren
-  tft.init();
-  tft.setRotation(2);  // ggf. anpassen
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+// -- Kalibrierungsfunktion ---
+void calibrateTouch() {
+  tft.fillScreen(ILI9341_BLACK);
+  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
   tft.setTextSize(2);
 
+  // Hilfsfunktion: Punkt zeichnen und warten
+  auto measurePoint = [&](int px, int py, int &rx, int &ry) {
+    Serial.print("Punkt an ");
+    Serial.print(px);
+    Serial.print("x");
+    Serial.println(py); 
+    tft.fillScreen(ILI9341_BLACK);
+    tft.setCursor(10, 10);
+    tft.println("Beruehre den roten Punkt");
+    tft.drawCircle(px, py, 5, ILI9341_RED);
+    // warten bis Touch gedrückt
+    while (!ts.touched()) delay(10);
+    delay(200); // Entprellen
+    TS_Point p = ts.getPoint();
+    rx = p.x;
+    ry = p.y;
+    // warten bis losgelassen
+    while (ts.touched()) delay(10);
+    delay(200);
+  };
+
+  int rx1, ry1, rx2, ry2, rx3, ry3, rx4, ry4;
+
+  // linke obere Ecke
+  measurePoint(20, 20, rx1, ry1);
+  // rechte obere Ecke
+  measurePoint(tft.width() - 20, 20, rx2, ry2);
+  // linke untere Ecke
+  measurePoint(20, tft.height() - 20, rx3, ry3);
+  // rechte untere Ecke
+  measurePoint(tft.width() - 20, tft.height() - 20, rx4, ry4);
+
+  // Minimal/Maximal ermitteln
+  calib.tsMinX = min(min(rx1, rx3), min(rx2, rx4));
+  calib.tsMaxX = max(max(rx1, rx3), max(rx2, rx4));
+  calib.tsMinY = min(min(ry1, ry2), min(ry3, ry4));
+  calib.tsMaxY = max(max(ry1, ry2), max(ry3, ry4));
+  tft.fillScreen(ILI9341_BLACK);
+  tft.setCursor(10, 10);
+  tft.println("Kalibrierung fertig");
+
+  // Ausgabe der Werte im Seriellen Monitor
+  Serial.printf("TS_MINX=%d TS_MAXX=%d TS_MINY=%d TS_MAXY=%d\n",
+                calib.tsMinX, calib.tsMaxX, calib.tsMinY, calib.tsMaxY);
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) {}
+  Serial.println();
+  Serial.println("DoggoScale!");
+
+  // TFT starten
+  tft.begin();
+  Serial.print("Display initialisiert: ");
+  Serial.print(tft.width());
+  Serial.print("x");  
+  Serial.println(tft.height()); 
+  tft.setRotation(1); // Querformat
+  tft.fillScreen(ILI9341_BLACK);
+
+  tft.setTextSize(2);
+  tft.setTextColor(ILI9341_GREEN);
+  tft.setCursor(10, 10);
+  tft.println("DoggoScale");
+
+  // Touch initialisieren
+  if (ts.begin()) {
+    Serial.println("XPT2046 ready");
+    ts.setRotation(3);
+  } else {
+    Serial.println("XPT2046 NOT detected!");
+  }
+
+
   // HX711 initialisieren
-  tft.setCursor(0, 0, 2);
+  tft.setCursor(0, 0);
   tft.println("Warte auf Waage...");
   Serial.println("Initialisiere Waage");
   scale.begin(HX711_DT, HX711_SCK);
@@ -93,19 +215,35 @@ void setup() {
     delay(100);
   }
 
-  scale.set_scale(calibration_factor);
+  scale.set_scale(calib.scaleCalibration);
   scale.tare();
   scalePresent = true;
   Serial.println("HX711 bereit, Nullpunkt gesetzt.");
-  tft.setCursor(0, 0, 2);
   tft.println("Waage bereit...       ");
   delay(1000);
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(ILI9341_BLACK);
 
+  drawGui();
+  tft.setCursor(10, 10);
+  tft.println("DoggoScale");
 }
 
-// -------------------- Loop --------------------
 void loop() {
+  TS_Point p;
+  if (ts.touched()) {
+    p = ts.getPoint();
+
+    // Rohwerte -> Pixel
+    int x = map(p.x, calib.tsMinX, calib.tsMaxX, 0, tft.width());
+    int y = map(p.y, calib.tsMinY, calib.tsMaxY, 0, tft.height());
+    x = constrain(x, 0, tft.width() - 1);
+    y = constrain(y, 0, tft.height() - 1);
+
+    Serial.printf("IRQ Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
+    handleTouch(x, y);
+    delay(500);
+  }
+
   if (scalePresent) {
     float gewicht = scale.get_units(5) / 1000; // Mittelwert über 5 Messungen
     float raw = scale.read_average(5);
@@ -119,17 +257,14 @@ void loop() {
 
     // TFT Ausgabe
     tft.setTextSize(2);
-    tft.setCursor(10, 40, 2);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setCursor(10, 140);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
     tft.println("Gewicht:"); // Passt in Größe 2 gerade so aufs Display
 
-    tft.setCursor(0, 80, 2);
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.fillRect(130, 130, 160, 160, TFT_BLACK); //TODO: Letzte Pixel wegkratzen
+    tft.setCursor(0, 180);
+    tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
+    //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
     tft.printf("%6.2f kg", gewicht);
+  }  
 
-    // --- Button check ---
-    getTareButtonState(); 
-  }
-  getButtonState(TARE_BUTTON);
 }
