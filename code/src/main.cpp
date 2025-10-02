@@ -114,7 +114,7 @@ void handleTouch(int tx, int ty) {
 void onBoxTara() {
   scale.tare();
   tft.setCursor(10, 210);
-  tft.setTextColor(ILI9341_GREEN);
+  tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
   tft.setTextSize(2);
   tft.println("Tariert");
   delay(1000);
