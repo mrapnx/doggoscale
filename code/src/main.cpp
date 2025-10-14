@@ -205,7 +205,7 @@ void setup() {
 
 
   // HX711 initialisieren
-  tft.setCursor(0, 0);
+  tft.setCursor(0, 50);
   tft.println("Warte auf Waage...");
   Serial.println("Initialisiere Waage");
   scale.begin(HX711_DT, HX711_SCK);
