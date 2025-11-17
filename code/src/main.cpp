@@ -6,6 +6,9 @@
 #include <EEPROM.h>
 #include <HX711.h>
 
+// #define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+
+
 // --- Pin-Definitionen  ---
 
 // DISPLAY + TOUCH
@@ -79,7 +82,7 @@ void onBoxTara();
 // --- Zentrales Array mit allen Boxen ---
 GuiBox guiBoxes[] = {
 // x,   y,   w,   h,  label,   color,        onTouch
-  {200,  40, 80, 160, "Tara", ILI9341_GREEN,  onBoxTara},
+  {210,  200, 60, 30, "Tara", ILI9341_GREEN,  onBoxTara},
 
 
 };
@@ -190,17 +193,12 @@ void setup() {
   tft.setRotation(1); // Querformat
   tft.fillScreen(ILI9341_BLACK);
 
-  tft.setTextSize(2);
-  tft.setTextColor(ILI9341_GREEN);
-  tft.setCursor(10, 10);
-  tft.println("DoggoScale");
-
   // Touch initialisieren
   if (ts.begin()) {
-    Serial.println("XPT2046 ready");
+    Serial.println("XPT2046 bereit");
     ts.setRotation(3);
   } else {
-    Serial.println("XPT2046 NOT detected!");
+    Serial.println("XPT2046 nicht gefunden!");
   }
 
 
@@ -224,8 +222,6 @@ void setup() {
   tft.fillScreen(ILI9341_BLACK);
 
   drawGui();
-  tft.setCursor(10, 10);
-  tft.println("DoggoScale");
 }
 
 void loop() {
@@ -239,30 +235,28 @@ void loop() {
     x = constrain(x, 0, tft.width() - 1);
     y = constrain(y, 0, tft.height() - 1);
 
-    Serial.printf("IRQ Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
+    Serial.printf("Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
     handleTouch(x, y);
-    delay(500);
+    delay(200);
   }
 
   if (scalePresent) {
-    float gewicht = scale.get_units(5) / 1000; // Mittelwert über 5 Messungen
-    float raw = scale.read_average(5);
-    float value = scale.get_value(5);
+    float gewicht = scale.get_units(3) / 1000; // Mittelwert über 3 Messungen
+    #ifdef DEBUG
+      float raw = scale.read_average(5);
+      float value = scale.get_value(5);
+      Serial.printf("Raw: %.2f \n", raw);
+      Serial.printf("Value: %.1f \n", value);
+    #endif
 
     // Serial Ausgabe
     Serial.printf("Gewicht: %.1f kg\n", gewicht);
-    Serial.printf("Raw: %.2f \n", raw);
-    Serial.printf("Value: %.1f \n", value);
     Serial.println(" ");
 
     // TFT Ausgabe
-    tft.setTextSize(2);
-    tft.setCursor(10, 140);
+    tft.setCursor(0, 40);
+    tft.setTextSize(5);
     tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-    tft.println("Gewicht:"); // Passt in Größe 2 gerade so aufs Display
-
-    tft.setCursor(0, 180);
-    tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
     //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
     tft.printf("%6.2f kg", gewicht);
   }  
