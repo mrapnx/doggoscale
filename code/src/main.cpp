@@ -2,6 +2,10 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
+#include <Fonts/FreeSans12pt7b.h>
+#include <Fonts/FreeSans18pt7b.h>
+#include <Fonts/FreeSans24pt7b.h>
+#include <Fonts/FreeSans9pt7b.h>
 #include <XPT2046_Touchscreen.h>
 #include <EEPROM.h>
 #include <HX711.h>
@@ -187,6 +191,7 @@ void setup() {
   // TFT starten
   tft.begin();
   Serial.print("Display initialisiert: ");
+  tft.setFont(&FreeSans9pt7b);
   Serial.print(tft.width());
   Serial.print("x");  
   Serial.println(tft.height()); 
