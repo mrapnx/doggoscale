@@ -47,9 +47,14 @@ struct CalibrationData {
 CalibrationData calib;
 
 // -- Waage --------------------
-
-HX711 scale;
-boolean scalePresent = false;
+HX711           scale;
+boolean         scalePresent      = false;
+unsigned short  samplesPerReading = 3;
+unsigned long   lastTareCheck     = 0;
+unsigned short  tareCheckInterval = 5; // Sek.
+unsigned short  tareThreshold     = 5; // Kg, schwankt das Gewicht innerhalb dieses Bereichs, wird automatisch tariert
+float           lastWeight        = 0.0;
+float           currentWeight     = 0.0;
 
 // -- TFT + Touch Objekte --------------------
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
@@ -74,6 +79,10 @@ void calibrateTouch();
 void drawBox(const GuiBox &box);
 void drawGui();
 void handleTouch(int tx, int ty);
+void tare();
+void getCurrentWeight();
+void outputCurrentWeight();
+void checkTouch();
 
 // Forward-Deklarationen der Callback-Funktionen
 void onBoxTara();
@@ -113,9 +122,8 @@ void handleTouch(int tx, int ty) {
   }
 }
 
-// --- GUI Callback-Funktionen ---
-void onBoxTara() {
-  scale.tare();
+void manualTare() {
+  tare();
   tft.setCursor(10, 210);
   tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
   tft.setTextSize(2);
@@ -123,6 +131,16 @@ void onBoxTara() {
   delay(1000);
   tft.setCursor(10, 210);
   tft.println("            ");
+}
+
+void tare() {
+  scale.tare();
+  lastTareCheck = millis();
+}
+
+// --- GUI Callback-Funktionen ---
+void onBoxTara() {
+  manualTare();
 }
 
 
@@ -213,9 +231,9 @@ void setup() {
     delay(100);
   }
 
-  scale.set_scale(calib.scaleCalibration);
-  scale.tare();
   scalePresent = true;
+  scale.set_scale(calib.scaleCalibration);
+  tare();
   Serial.println("HX711 bereit, Nullpunkt gesetzt.");
   tft.println("Waage bereit...       ");
   delay(1000);
@@ -224,7 +242,48 @@ void setup() {
   drawGui();
 }
 
-void loop() {
+void getCurrentWeight() {
+  if (scalePresent) {
+    currentWeight = scale.get_units(samplesPerReading); // Mittelwert über [samplesPerReading] Messungen
+    // Serial Ausgabe
+    Serial.printf("Gewicht: %.1f kg\n", currentWeight);
+    Serial.println(" ");
+    if (millis() > lastTareCheck + (tareCheckInterval * 1000)) {
+      if (abs(currentWeight - lastWeight) < tareThreshold) { // wenn Gewicht stabil
+        tare();
+        Serial.print("currentWeight: ");
+        Serial.print(currentWeight);
+        Serial.print(" - lastWeight: ");
+        Serial.print(lastWeight);
+        Serial.print(" < tareThreshold: ");
+        Serial.print(tareThreshold);
+        Serial.println(" => Automatisch tariert.");
+      }
+      lastWeight = currentWeight;
+    }
+    #ifdef DEBUG
+      float raw = scale.read_average(5);
+      float value = scale.get_value(5);
+      Serial.printf("Raw: %.2f \n", raw);
+      Serial.printf("Value: %.1f \n", value);
+    #endif    
+  } else {
+    currentWeight = 0.0;
+    Serial.println("scalePresent == false");
+  }
+  
+}
+
+void outputCurrentWeight() {
+    // TFT Ausgabe
+    tft.setCursor(0, 40);
+    tft.setTextSize(5);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
+    tft.printf("%6.2f kg", currentWeight);
+}
+
+void checkTouch() {
   TS_Point p;
   if (ts.touched()) {
     p = ts.getPoint();
@@ -237,28 +296,11 @@ void loop() {
 
     Serial.printf("Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
     handleTouch(x, y);
-    delay(200);
   }
+}
 
-  if (scalePresent) {
-    float gewicht = scale.get_units(3) / 1000; // Mittelwert über 3 Messungen
-    #ifdef DEBUG
-      float raw = scale.read_average(5);
-      float value = scale.get_value(5);
-      Serial.printf("Raw: %.2f \n", raw);
-      Serial.printf("Value: %.1f \n", value);
-    #endif
-
-    // Serial Ausgabe
-    Serial.printf("Gewicht: %.1f kg\n", gewicht);
-    Serial.println(" ");
-
-    // TFT Ausgabe
-    tft.setCursor(0, 40);
-    tft.setTextSize(5);
-    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-    //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
-    tft.printf("%6.2f kg", gewicht);
-  }  
-
+void loop() {
+  checkTouch();
+  getCurrentWeight();
+  outputCurrentWeight();
 }
