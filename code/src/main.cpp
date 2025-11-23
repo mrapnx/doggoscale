@@ -80,6 +80,7 @@ void drawBox(const GuiBox &box);
 void drawGui();
 void handleTouch(int tx, int ty);
 void tare();
+void manualTare();
 void getCurrentWeight();
 void outputCurrentWeight();
 void checkTouch();
@@ -244,10 +245,11 @@ void setup() {
 
 void getCurrentWeight() {
   if (scalePresent) {
-    currentWeight = scale.get_units(samplesPerReading); // Mittelwert über [samplesPerReading] Messungen
+    currentWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
     // Serial Ausgabe
-    Serial.printf("Gewicht: %.1f kg\n", currentWeight);
+    Serial.printf("Gewicht: %.2f kg\n", currentWeight);
     Serial.println(" ");
+    
     if (millis() > lastTareCheck + (tareCheckInterval * 1000)) {
       if (abs(currentWeight - lastWeight) < tareThreshold) { // wenn Gewicht stabil
         tare();
@@ -258,9 +260,10 @@ void getCurrentWeight() {
         Serial.print(" < tareThreshold: ");
         Serial.print(tareThreshold);
         Serial.println(" => Automatisch tariert.");
+        lastWeight = currentWeight;
       }
-      lastWeight = currentWeight;
     }
+      
     #ifdef DEBUG
       float raw = scale.read_average(5);
       float value = scale.get_value(5);
@@ -270,7 +273,7 @@ void getCurrentWeight() {
   } else {
     currentWeight = 0.0;
     Serial.println("scalePresent == false");
-  }
+  }    
   
 }
 
@@ -302,5 +305,5 @@ void checkTouch() {
 void loop() {
   checkTouch();
   getCurrentWeight();
-  outputCurrentWeight();
+  outputCurrentWeight();  
 }
