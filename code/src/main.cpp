@@ -3,7 +3,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 #include <XPT2046_Touchscreen.h>
-#include <EEPROM.h>
 #include <HX711.h>
 
 // #define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
@@ -11,7 +10,7 @@
 
 // --- Pin-Definitionen  ---
 
-// DISPLAY + TOUCH
+//**  DISPLAY + TOUCH
 //#define TOUCH_IRQ   -    // IRQ Pin für Touchscreen, hier unbenutzt
 //#define TOUCH_D0    D6   // (MISO)
 //#define TOUCH_DIN   D7   // (MOSI)
@@ -28,7 +27,7 @@
 //#define GND         G
 //#define VCC         3V
 
-// Wägezellencontroller HX711
+//**  Wägezellencontroller HX711
 //#define VCC         3V
   #define HX711_SCK   D1
   #define HX711_DT    D2 
@@ -51,18 +50,14 @@ HX711           scale;
 boolean         scalePresent      = false;
 unsigned short  samplesPerReading = 3;
 unsigned long   lastTareCheck     = 0;
-unsigned short  tareCheckInterval = 5; // Sek.
-unsigned short  tareThreshold     = 5; // Kg, schwankt das Gewicht innerhalb dieses Bereichs, wird automatisch tariert
+unsigned short  tareCheckInterval = 5000; // Millisek.
+float           tareThreshold     = 5.0; // Kg, schwankt das Gewicht innerhalb dieses Bereichs, wird automatisch tariert
 float           lastWeight        = 0.0;
 float           currentWeight     = 0.0;
 
 // -- TFT + Touch Objekte --------------------
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen ts(TOUCH_CS);
-
-// --- Speicher --------------------
-#define EEPROM_SIZE 64
-#define EEPROM_ADDR 0
 
 // --- GUI Struktur --------------------
 typedef void (*CallbackFn)();
@@ -73,17 +68,6 @@ struct GuiBox {
   uint16_t color;
   CallbackFn onTouch;
 };
-
-// --- Forward-Deklarationen --------------------
-void calibrateTouch();
-void drawBox(const GuiBox &box);
-void drawGui();
-void handleTouch(int tx, int ty);
-void tare();
-void manualTare();
-void getCurrentWeight();
-void outputCurrentWeight();
-void checkTouch();
 
 // Forward-Deklarationen der Callback-Funktionen
 void onBoxTara();
@@ -98,7 +82,21 @@ GuiBox guiBoxes[] = {
 };
 const int NUM_BOXES = sizeof(guiBoxes) / sizeof(guiBoxes[0]);
 
-// -- GUI Funktionen ---
+// --- Forward-Deklarationen --------------------
+void calibrateTouch();
+void drawBox(const GuiBox &box);
+void drawGui();
+void handleTouch(int tx, int ty);
+void tare();
+void manualTare();
+void getCurrentWeight();
+void outputCurrentWeight();
+void checkTouch();
+void checkAutoTare();
+
+
+// --- Funktionen --------------------
+
 void drawBox(const GuiBox &box) {
   tft.drawRect(box.x, box.y, box.w, box.h, box.color);
   tft.setCursor(box.x + 5, box.y + box.h / 2 - 8);
@@ -139,13 +137,10 @@ void tare() {
   lastTareCheck = millis();
 }
 
-// --- GUI Callback-Funktionen ---
 void onBoxTara() {
   manualTare();
 }
 
-
-// -- Kalibrierungsfunktion ---
 void calibrateTouch() {
   tft.fillScreen(ILI9341_BLACK);
   tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
@@ -197,50 +192,21 @@ void calibrateTouch() {
                 calib.tsMinX, calib.tsMaxX, calib.tsMinY, calib.tsMaxY);
 }
 
-void setup() {
-  Serial.begin(115200);
-  while (!Serial) {}
-  Serial.println();
-  Serial.println("DoggoScale!");
 
-  // TFT starten
-  tft.begin();
-  Serial.print("Display initialisiert: ");
-  Serial.print(tft.width());
-  Serial.print("x");  
-  Serial.println(tft.height()); 
-  tft.setRotation(1); // Querformat
-  tft.fillScreen(ILI9341_BLACK);
-
-  // Touch initialisieren
-  if (ts.begin()) {
-    Serial.println("XPT2046 bereit");
-    ts.setRotation(3);
-  } else {
-    Serial.println("XPT2046 nicht gefunden!");
+void checkAutoTare() {
+  if (millis() > (lastTareCheck + tareCheckInterval)) {
+    if (abs(currentWeight - lastWeight) < tareThreshold) { // wenn Gewicht stabil
+      tare();
+      Serial.print("currentWeight: ");
+      Serial.print(currentWeight);
+      Serial.print(" - lastWeight: ");
+      Serial.print(lastWeight);
+      Serial.print(" < tareThreshold: ");
+      Serial.print(tareThreshold);
+      Serial.println(" => Automatisch tariert.");
+      lastWeight = currentWeight;
+    }
   }
-
-
-  // HX711 initialisieren
-  tft.setCursor(0, 50);
-  tft.println("Warte auf Waage...");
-  Serial.println("Initialisiere Waage");
-  scale.begin(HX711_DT, HX711_SCK);
-
-  while (!scale.is_ready()) {
-    Serial.println("Warte auf Waage...");
-    delay(100);
-  }
-
-  scalePresent = true;
-  scale.set_scale(calib.scaleCalibration);
-  tare();
-  Serial.println("HX711 bereit, Nullpunkt gesetzt.");
-  tft.println("Waage bereit...       ");
-  delay(1000);
-  tft.fillScreen(ILI9341_BLACK);
-
-  drawGui();
 }
 
 void getCurrentWeight() {
@@ -250,19 +216,7 @@ void getCurrentWeight() {
     Serial.printf("Gewicht: %.2f kg\n", currentWeight);
     Serial.println(" ");
     
-    if (millis() > lastTareCheck + (tareCheckInterval * 1000)) {
-      if (abs(currentWeight - lastWeight) < tareThreshold) { // wenn Gewicht stabil
-        tare();
-        Serial.print("currentWeight: ");
-        Serial.print(currentWeight);
-        Serial.print(" - lastWeight: ");
-        Serial.print(lastWeight);
-        Serial.print(" < tareThreshold: ");
-        Serial.print(tareThreshold);
-        Serial.println(" => Automatisch tariert.");
-        lastWeight = currentWeight;
-      }
-    }
+    // checkAutoTare();
       
     #ifdef DEBUG
       float raw = scale.read_average(5);
@@ -300,6 +254,51 @@ void checkTouch() {
     Serial.printf("Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
     handleTouch(x, y);
   }
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) {}
+  Serial.println();
+  Serial.println("DoggoScale!");
+
+  // TFT starten
+  tft.begin();
+  Serial.print("Display initialisiert: ");
+  Serial.print(tft.width());
+  Serial.print("x");  
+  Serial.println(tft.height()); 
+  tft.setRotation(1); // Querformat
+  tft.fillScreen(ILI9341_BLACK);
+
+  // Touch initialisieren
+  if (ts.begin()) {
+    Serial.println("XPT2046 bereit");
+    ts.setRotation(3);
+  } else {
+    Serial.println("XPT2046 nicht gefunden!");
+  }
+
+  // HX711 initialisieren
+  tft.setCursor(0, 50);
+  tft.println("Warte auf Waage...");
+  Serial.println("Initialisiere Waage");
+  scale.begin(HX711_DT, HX711_SCK);
+
+  while (!scale.is_ready()) {
+    Serial.println("Warte auf Waage...");
+    delay(100);
+  }
+
+  scalePresent = true;
+  scale.set_scale(calib.scaleCalibration);
+  tare();
+  Serial.println("HX711 bereit, Nullpunkt gesetzt.");
+  tft.println("Waage bereit...       ");
+  delay(1000);
+  tft.fillScreen(ILI9341_BLACK);
+
+  drawGui();
 }
 
 void loop() {
