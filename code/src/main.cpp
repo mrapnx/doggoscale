@@ -48,7 +48,7 @@ CalibrationData calib;
 // -- Waage --------------------
 HX711           scale;
 boolean         scalePresent      = false;
-unsigned short  samplesPerReading = 3;
+unsigned short  samplesPerReading = 1;
 unsigned long   lastTareCheck     = 0;
 unsigned short  tareCheckInterval = 5000; // Millisek.
 float           tareThreshold     = 5.0; // Kg, schwankt das Gewicht innerhalb dieses Bereichs, wird automatisch tariert
@@ -133,7 +133,9 @@ void manualTare() {
 }
 
 void tare() {
+  lastWeight = currentWeight;
   scale.tare();
+  Serial.println("Waage tariert");
   lastTareCheck = millis();
 }
 
@@ -194,17 +196,32 @@ void calibrateTouch() {
 
 
 void checkAutoTare() {
+float difference = 0;
+
+// Wenn seit der letzten Prüfung genug Zeit vergangen ist
   if (millis() > (lastTareCheck + tareCheckInterval)) {
-    if (abs(currentWeight - lastWeight) < tareThreshold) { // wenn Gewicht stabil
-      tare();
-      Serial.print("currentWeight: ");
-      Serial.print(currentWeight);
-      Serial.print(" - lastWeight: ");
-      Serial.print(lastWeight);
+    // Wenn der aktuelle Messwert negativ ist
+    difference = currentWeight - lastWeight;
+    if (difference < 0) {
+      // ins Positive drehen
+      difference = -difference;
+    } 
+
+    Serial.print("Auto-Tare Check: ");
+    Serial.print("currentWeight: ");
+    Serial.print(currentWeight);
+    Serial.print(" - lastWeight: ");
+    Serial.print(lastWeight);
+    // wenn Gewicht stabil ist
+    Serial.print(" -> difference: ");
+    Serial.print(difference);
+    if ((currentWeight - lastWeight) < tareThreshold) { 
       Serial.print(" < tareThreshold: ");
       Serial.print(tareThreshold);
       Serial.println(" => Automatisch tariert.");
-      lastWeight = currentWeight;
+      tare();
+    } else {
+      Serial.println(" >= tareThreshold: kein Tare.");
     }
   }
 }
@@ -214,9 +231,8 @@ void getCurrentWeight() {
     currentWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
     // Serial Ausgabe
     Serial.printf("Gewicht: %.2f kg\n", currentWeight);
-    Serial.println(" ");
     
-    // checkAutoTare();
+    checkAutoTare();
       
     #ifdef DEBUG
       float raw = scale.read_average(5);
