@@ -5,7 +5,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <HX711.h>
 
-// #define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+#define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
 
 
 // --- Pin-Definitionen  ---
@@ -52,6 +52,8 @@ unsigned short  samplesPerReading = 1;
 unsigned long   lastTareCheck     = 0;
 unsigned short  tareCheckInterval = 5000; // Millisek.
 float           tareThreshold     = 5.0; // Kg, schwankt das Gewicht innerhalb dieses Bereichs, wird automatisch tariert
+float           tare              = 0.0;
+float           untarredWeight    = 0.0;
 float           lastWeight        = 0.0;
 float           currentWeight     = 0.0;
 
@@ -75,8 +77,8 @@ void onBoxTara();
 
 // --- Zentrales Array mit allen Boxen ---
 GuiBox guiBoxes[] = {
-// x,   y,   w,   h,  label,   color,        onTouch
-  {210,  200, 60, 30, "Tara", ILI9341_GREEN,  onBoxTara},
+//   x,   y,   w,   h,  label,         color,    onTouch
+  {190,  170, 120, 60, "Tara", ILI9341_GREEN,  onBoxTara},
 
 
 };
@@ -87,7 +89,7 @@ void calibrateTouch();
 void drawBox(const GuiBox &box);
 void drawGui();
 void handleTouch(int tx, int ty);
-void tare();
+void doTare();
 void manualTare();
 void getCurrentWeight();
 void outputCurrentWeight();
@@ -122,20 +124,21 @@ void handleTouch(int tx, int ty) {
 }
 
 void manualTare() {
-  tare();
+  doTare();
   tft.setCursor(10, 210);
   tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
   tft.setTextSize(2);
   tft.println("Tariert");
   delay(1000);
   tft.setCursor(10, 210);
-  tft.println("            ");
+  tft.println("       ");
 }
 
-void tare() {
+void doTare() {
   lastWeight = currentWeight;
-  scale.tare();
-  Serial.println("Waage tariert");
+  tare = untarredWeight;
+  Serial.print("Waage tariert: ");
+  Serial.println(tare);
   lastTareCheck = millis();
 }
 
@@ -196,9 +199,9 @@ void calibrateTouch() {
 
 
 void checkAutoTare() {
-float difference = 0;
+  float difference = 0;
 
-// Wenn seit der letzten Prüfung genug Zeit vergangen ist
+  // Wenn seit der letzten Prüfung genug Zeit vergangen ist
   if (millis() > (lastTareCheck + tareCheckInterval)) {
     // Wenn der aktuelle Messwert negativ ist
     difference = currentWeight - lastWeight;
@@ -219,7 +222,7 @@ float difference = 0;
       Serial.print(" < tareThreshold: ");
       Serial.print(tareThreshold);
       Serial.println(" => Automatisch tariert.");
-      tare();
+      doTare();
     } else {
       Serial.println(" >= tareThreshold: kein Tare.");
     }
@@ -228,7 +231,8 @@ float difference = 0;
 
 void getCurrentWeight() {
   if (scalePresent) {
-    currentWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
+    untarredWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
+    currentWeight = untarredWeight - tare;
     // Serial Ausgabe
     Serial.printf("Gewicht: %.2f kg\n", currentWeight);
     
@@ -239,6 +243,12 @@ void getCurrentWeight() {
       float value = scale.get_value(5);
       Serial.printf("Raw: %.2f \n", raw);
       Serial.printf("Value: %.1f \n", value);
+      tft.setTextSize(1);
+      tft.setCursor(0, 100);
+      tft.printf("untarredWeight: %.5f   \n", untarredWeight);
+      tft.printf("currentWeight: %.5f   \n",  currentWeight);
+      tft.printf("lastWeight: %.5f   \n",     lastWeight); 
+      tft.printf("tare: %.5f   \n",           tare); 
     #endif    
   } else {
     currentWeight = 0.0;
@@ -308,10 +318,10 @@ void setup() {
 
   scalePresent = true;
   scale.set_scale(calib.scaleCalibration);
-  tare();
+  scale.tare();
   Serial.println("HX711 bereit, Nullpunkt gesetzt.");
   tft.println("Waage bereit...       ");
-  delay(1000);
+  delay(500);
   tft.fillScreen(ILI9341_BLACK);
 
   drawGui();
