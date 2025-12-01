@@ -9,7 +9,8 @@
 #include <XPT2046_Touchscreen.h>
 #include <HX711.h>
 
-#define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+#define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+#define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
 
 
 // --- Pin-Definitionen  ---
@@ -70,6 +71,7 @@ long            raw               = 0;
 
 // -- TFT + Touch Objekte --------------------
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
+GFXcanvas1 canvas(330, 50);
 XPT2046_Touchscreen ts(TOUCH_CS);
 
 // --- GUI Struktur --------------------
@@ -112,7 +114,7 @@ void checkAutoTare();
 
 void drawBox(const GuiBox &box) {
   tft.drawRect(box.x, box.y, box.w, box.h, box.color);
-  tft.setCursor(box.x + 5, box.y + box.h / 2 - 8);
+  tft.setCursor(box.x + 5, box.y + box.h / 2);
   tft.setTextColor(box.color);
   tft.setTextSize(2);
   tft.print(box.label);
@@ -138,7 +140,7 @@ void manualTare() {
   doTare();
   tft.setCursor(10, 210);
   tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
-  tft.setTextSize(2);
+  tft.setFont(&FreeSans9pt7b);
   tft.println("Tariert");
   delay(1000);
   tft.setCursor(10, 210);
@@ -256,13 +258,19 @@ void getCurrentWeight() {
   #ifdef DEBUG
     Serial.println("getCurrentWeight() BEGIN");
   #endif
-  if (scalePresent) {
-    // Gib der Waage einen Timeout mit, nachdem sie aufgeben soll
-    if (scale.wait_ready_timeout(scaleTimeout)) {
-      untarredWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
-      currentWeight = untarredWeight - tare;
-      // Serial Ausgabe
-      Serial.printf("Gewicht: %.2f kg\n", currentWeight);
+
+  #ifdef DRYRUN
+    currentWeight = random(-3000, 3000) / 100.0;
+    Serial.printf("DRYRUN Gewicht: %.2f kg\n", currentWeight);
+    delay(1000);
+  #else
+    if (scalePresent) {
+      // Gib der Waage einen Timeout mit, nachdem sie aufgeben soll
+      if (scale.wait_ready_timeout(scaleTimeout)) {
+        untarredWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
+        currentWeight = untarredWeight - tare;
+        // Serial Ausgabe
+        Serial.printf("Gewicht: %.2f kg\n", currentWeight);
     
       checkAutoTare();
       
@@ -292,6 +300,7 @@ void getCurrentWeight() {
     scalePresent = false;
     currentWeight = 0.0;
   }
+  #endif
 
   #ifdef DEBUG
     Serial.println("getCurrentWeight() END");
@@ -303,12 +312,12 @@ void outputCurrentWeight() {
     Serial.println("outputCurrentWeight() BEGIN");
   #endif
     // TFT Ausgabe
-    tft.setCursor(0, 40);
-    // tft.setTextSize(5);
-    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-    tft.setFont(&FreeSans18pt7b);
-    //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
-    tft.printf("%6.2f kg", currentWeight);
+    canvas.fillScreen(ILI9341_BLACK);
+    canvas.setCursor(0, 38); // Keine Ahnung warum, aber wenn man Font verwendet, muss Y höher gesetzt werden
+    canvas.setFont(&FreeSans24pt7b);
+    //canvas.setTextSize(5);
+    canvas.printf("%6.2f kg", currentWeight);
+    tft.drawBitmap(0, 65, canvas.getBuffer(), 330, 50, ILI9341_WHITE, ILI9341_BLACK); // Copy to screen
   #ifdef DEBUG
     Serial.println("outputCurrentWeight() END");
   #endif
@@ -355,21 +364,25 @@ void setup() {
   }
 
   // HX711 initialisieren
-  tft.setCursor(0, 50);
-  tft.println("Warte auf Waage...");
-  Serial.println("Initialisiere Waage");
-  scale.begin(HX711_DT, HX711_SCK);
+  #ifdef DRYRUN
+    Serial.println("DRYRUN Modus: Simuliere HX711 Waage");
+  #else
+    tft.setCursor(0, 50);
+    tft.println("Warte auf Waage...");
+    Serial.println("Initialisiere Waage");
+    scale.begin(HX711_DT, HX711_SCK);
 
-  while (!scale.is_ready()) {
-    Serial.println("Warte auf Waage...");
-    delay(100);
-  }
+    while (!scale.is_ready()) {
+      Serial.println("Warte auf Waage...");
+      delay(100);
+    }
 
-  scalePresent = true;
-  scale.set_scale(calib.scaleCalibration);
-  scale.tare();
-  Serial.println("HX711 bereit, Nullpunkt gesetzt.");
-  tft.println("Waage bereit...       ");
+    scalePresent = true;
+    scale.set_scale(calib.scaleCalibration);
+    scale.tare();
+    Serial.println("HX711 bereit, Nullpunkt gesetzt.");
+    tft.println("Waage bereit...       ");
+  #endif
   delay(500);
   tft.fillScreen(ILI9341_BLACK);
 
