@@ -254,7 +254,7 @@ void getCurrentWeight() {
   #endif
 
   #ifdef DRYRUN
-    currentWeight = random(0, 3000) / 100.0;
+    currentWeight = random(-3000, 3000) / 100.0;
     Serial.printf("DRYRUN Gewicht: %.2f kg\n", currentWeight);
     delay(1000);
   #else
