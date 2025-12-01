@@ -304,8 +304,9 @@ void outputCurrentWeight() {
   #endif
     // TFT Ausgabe
     tft.setCursor(0, 40);
-    tft.setTextSize(5);
+    // tft.setTextSize(5);
     tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    tft.setFont(&FreeSans18pt7b);
     //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
     tft.printf("%6.2f kg", currentWeight);
   #ifdef DEBUG
