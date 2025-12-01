@@ -7,15 +7,14 @@
 #include <Fonts/FreeSans24pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <XPT2046_Touchscreen.h>
-#include <EEPROM.h>
 #include <HX711.h>
 
-// #define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+#define DEBUG // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
 
 
 // --- Pin-Definitionen  ---
 
-// DISPLAY + TOUCH
+//**  DISPLAY + TOUCH
 //#define TOUCH_IRQ   -    // IRQ Pin für Touchscreen, hier unbenutzt
 //#define TOUCH_D0    D6   // (MISO)
 //#define TOUCH_DIN   D7   // (MOSI)
@@ -32,7 +31,7 @@
 //#define GND         G
 //#define VCC         3V
 
-// Wägezellencontroller HX711
+//**  Wägezellencontroller HX711
 //#define VCC         3V
   #define HX711_SCK   D1
   #define HX711_DT    D2 
@@ -51,17 +50,27 @@ struct CalibrationData {
 CalibrationData calib;
 
 // -- Waage --------------------
+HX711           scale;
+boolean         scalePresent      = false;
+unsigned short  scaleTimeout      = 2000; // Millisek.
+unsigned short  samplesPerReading = 1;
+unsigned long   lastTareCheck     = 0;
+unsigned short  tareCheckInterval = 5000; // Millisek.
+float           tareThreshold     = 5.0; // Kg, schwankt das Gewicht innerhalb dieses Bereichs, wird automatisch tariert
+float           tare              = 0.0;
+float           untarredWeight    = 0.0;
+float           lastWeight        = 0.0;
+float           currentWeight     = 0.0;
 
-HX711 scale;
-boolean scalePresent = false;
+#ifdef DEBUG
+double          value             = 0;
+long            raw               = 0;
+#endif
+
 
 // -- TFT + Touch Objekte --------------------
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen ts(TOUCH_CS);
-
-// --- Speicher --------------------
-#define EEPROM_SIZE 64
-#define EEPROM_ADDR 0
 
 // --- GUI Struktur --------------------
 typedef void (*CallbackFn)();
@@ -73,26 +82,34 @@ struct GuiBox {
   CallbackFn onTouch;
 };
 
-// --- Forward-Deklarationen --------------------
-void calibrateTouch();
-void drawBox(const GuiBox &box);
-void drawGui();
-void handleTouch(int tx, int ty);
-
 // Forward-Deklarationen der Callback-Funktionen
 void onBoxTara();
 
 
 // --- Zentrales Array mit allen Boxen ---
 GuiBox guiBoxes[] = {
-// x,   y,   w,   h,  label,   color,        onTouch
-  {210,  200, 60, 30, "Tara", ILI9341_GREEN,  onBoxTara},
+//   x,   y,   w,   h,  label,         color,    onTouch
+  {190,  170, 120, 60, "Tara", ILI9341_GREEN,  onBoxTara},
 
 
 };
 const int NUM_BOXES = sizeof(guiBoxes) / sizeof(guiBoxes[0]);
 
-// -- GUI Funktionen ---
+// --- Forward-Deklarationen --------------------
+void calibrateTouch();
+void drawBox(const GuiBox &box);
+void drawGui();
+void handleTouch(int tx, int ty);
+void doTare();
+void manualTare();
+void getCurrentWeight();
+void outputCurrentWeight();
+void checkTouch();
+void checkAutoTare();
+
+
+// --- Funktionen --------------------
+
 void drawBox(const GuiBox &box) {
   tft.drawRect(box.x, box.y, box.w, box.h, box.color);
   tft.setCursor(box.x + 5, box.y + box.h / 2 - 8);
@@ -117,20 +134,35 @@ void handleTouch(int tx, int ty) {
   }
 }
 
-// --- GUI Callback-Funktionen ---
-void onBoxTara() {
-  scale.tare();
+void manualTare() {
+  doTare();
   tft.setCursor(10, 210);
   tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
   tft.setTextSize(2);
   tft.println("Tariert");
   delay(1000);
   tft.setCursor(10, 210);
-  tft.println("            ");
+  tft.println("       ");
 }
 
+void doTare() {
+  #ifdef DEBUG
+    Serial.println("doTare() BEGIN");
+  #endif
+  lastWeight = currentWeight;
+  tare = untarredWeight;
+  Serial.print("Waage tariert: ");
+  Serial.println(tare);
+  lastTareCheck = millis();
+  #ifdef DEBUG
+    Serial.println("doTare() END");
+  #endif
+}
 
-// -- Kalibrierungsfunktion ---
+void onBoxTara() {
+  manualTare();
+}
+
 void calibrateTouch() {
   tft.fillScreen(ILI9341_BLACK);
   tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
@@ -182,6 +214,121 @@ void calibrateTouch() {
                 calib.tsMinX, calib.tsMaxX, calib.tsMinY, calib.tsMaxY);
 }
 
+
+void checkAutoTare() {
+  #ifdef DEBUG
+    Serial.println("checkAutoTare() BEGIN");
+  #endif
+  float difference = 0;
+
+  // Wenn seit der letzten Prüfung genug Zeit vergangen ist
+  if (millis() > (lastTareCheck + tareCheckInterval)) {
+    // Wenn der aktuelle Messwert negativ ist
+    difference = currentWeight - lastWeight;
+    if (difference < 0) {
+      // ins Positive drehen
+      difference = -difference;
+    } 
+
+    Serial.print("Auto-Tare Check: ");
+    Serial.print("currentWeight: ");
+    Serial.print(currentWeight);
+    Serial.print(" - lastWeight: ");
+    Serial.print(lastWeight);
+    // wenn Gewicht stabil ist
+    Serial.print(" -> difference: ");
+    Serial.print(difference);
+    if (difference < tareThreshold) { 
+      Serial.print(" < tareThreshold: ");
+      Serial.print(tareThreshold);
+      Serial.println(" => Automatisch tariert.");
+      doTare();
+    } else {
+      Serial.println(" >= tareThreshold: kein Tare.");
+    }
+  }
+  #ifdef DEBUG
+    Serial.println("checkAutoTare() END");
+  #endif
+}
+
+void getCurrentWeight() {
+  #ifdef DEBUG
+    Serial.println("getCurrentWeight() BEGIN");
+  #endif
+  if (scalePresent) {
+    // Gib der Waage einen Timeout mit, nachdem sie aufgeben soll
+    if (scale.wait_ready_timeout(scaleTimeout)) {
+      untarredWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
+      currentWeight = untarredWeight - tare;
+      // Serial Ausgabe
+      Serial.printf("Gewicht: %.2f kg\n", currentWeight);
+    
+      checkAutoTare();
+      
+      #ifdef DEBUG
+        Serial.println("scale.read_average");
+        raw = scale.read_average(samplesPerReading);
+        Serial.printf("Raw: %ld \n", raw);
+
+        Serial.println("scale.get_value");
+        value = scale.get_value(samplesPerReading);
+        Serial.printf("Value: %.5f \n", value);
+
+        tft.setTextSize(1);
+        tft.setCursor(0, 100);
+        Serial.println("TFT Ausgabe Debug Werte");
+        tft.printf("untarredWeight: %.5f   \n", untarredWeight);
+        tft.printf("currentWeight: %.5f   \n",  currentWeight);
+        tft.printf("lastWeight: %.5f   \n",     lastWeight); 
+        tft.printf("tare: %.5f   \n",           tare); 
+      #endif    
+    } else {
+      currentWeight = 0.0;
+      Serial.println("scalePresent == false");
+    }    
+  } else {
+    Serial.println("HX711 nicht mehr gefunden");
+    scalePresent = false;
+    currentWeight = 0.0;
+  }
+
+  #ifdef DEBUG
+    Serial.println("getCurrentWeight() END");
+  #endif  
+}
+
+void outputCurrentWeight() {
+  #ifdef DEBUG
+    Serial.println("outputCurrentWeight() BEGIN");
+  #endif
+    // TFT Ausgabe
+    tft.setCursor(0, 40);
+    tft.setTextSize(5);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
+    tft.printf("%6.2f kg", currentWeight);
+  #ifdef DEBUG
+    Serial.println("outputCurrentWeight() END");
+  #endif
+}
+
+void checkTouch() {
+  TS_Point p;
+  if (ts.touched()) {
+    p = ts.getPoint();
+
+    // Rohwerte -> Pixel
+    int x = map(p.x, calib.tsMinX, calib.tsMaxX, 0, tft.width());
+    int y = map(p.y, calib.tsMinY, calib.tsMaxY, 0, tft.height());
+    x = constrain(x, 0, tft.width() - 1);
+    y = constrain(y, 0, tft.height() - 1);
+
+    Serial.printf("Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
+    handleTouch(x, y);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}
@@ -206,7 +353,6 @@ void setup() {
     Serial.println("XPT2046 nicht gefunden!");
   }
 
-
   // HX711 initialisieren
   tft.setCursor(0, 50);
   tft.println("Warte auf Waage...");
@@ -218,52 +364,19 @@ void setup() {
     delay(100);
   }
 
+  scalePresent = true;
   scale.set_scale(calib.scaleCalibration);
   scale.tare();
-  scalePresent = true;
   Serial.println("HX711 bereit, Nullpunkt gesetzt.");
   tft.println("Waage bereit...       ");
-  delay(1000);
+  delay(500);
   tft.fillScreen(ILI9341_BLACK);
 
   drawGui();
 }
 
 void loop() {
-  TS_Point p;
-  if (ts.touched()) {
-    p = ts.getPoint();
-
-    // Rohwerte -> Pixel
-    int x = map(p.x, calib.tsMinX, calib.tsMaxX, 0, tft.width());
-    int y = map(p.y, calib.tsMinY, calib.tsMaxY, 0, tft.height());
-    x = constrain(x, 0, tft.width() - 1);
-    y = constrain(y, 0, tft.height() - 1);
-
-    Serial.printf("Touch: raw=(%d,%d) -> pixel=(%d,%d)\n", p.x, p.y, x, y);
-    handleTouch(x, y);
-    delay(200);
-  }
-
-  if (scalePresent) {
-    float gewicht = scale.get_units(3) / 1000; // Mittelwert über 3 Messungen
-    #ifdef DEBUG
-      float raw = scale.read_average(5);
-      float value = scale.get_value(5);
-      Serial.printf("Raw: %.2f \n", raw);
-      Serial.printf("Value: %.1f \n", value);
-    #endif
-
-    // Serial Ausgabe
-    Serial.printf("Gewicht: %.1f kg\n", gewicht);
-    Serial.println(" ");
-
-    // TFT Ausgabe
-    tft.setCursor(0, 40);
-    tft.setTextSize(5);
-    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-    //tft.fillRect(130, 130, 160, 160, ILI9341_BLACK); //TODO: Letzte Pixel wegkratzen
-    tft.printf("%6.2f kg", gewicht);
-  }  
-
+  checkTouch();
+  getCurrentWeight();
+  outputCurrentWeight();  
 }
