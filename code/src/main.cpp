@@ -5,11 +5,12 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
+#include <FreeSans48pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <XPT2046_Touchscreen.h>
 #include <HX711.h>
 
-#define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+//#define DEBUG     // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
 #define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
 
 
@@ -70,8 +71,9 @@ long            raw               = 0;
 
 
 // -- TFT + Touch Objekte --------------------
+// 320x240 ILI9341 Display
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
-GFXcanvas1 canvas(330, 50);
+GFXcanvas1 canvasWeight(250, 85);
 XPT2046_Touchscreen ts(TOUCH_CS);
 
 // --- GUI Struktur --------------------
@@ -113,10 +115,14 @@ void checkAutoTare();
 // --- Funktionen --------------------
 
 void drawBox(const GuiBox &box) {
-  tft.drawRect(box.x, box.y, box.w, box.h, box.color);
-  tft.setCursor(box.x + 5, box.y + box.h / 2);
-  tft.setTextColor(box.color);
+int16_t  x1, y1;
+uint16_t w, h;
+
   tft.setTextSize(2);
+  tft.setTextColor(box.color);
+  tft.getTextBounds(box.label, box.x, box.y, &x1, &y1, &w, &h);
+  tft.drawRect(box.x, box.y, box.w, box.h, box.color);
+  tft.setCursor(box.x + ((box.w - w)/2), box.y + box.h / 1.5);
   tft.print(box.label);
 }
 
@@ -124,6 +130,11 @@ void drawGui() {
   for (int i = 0; i < NUM_BOXES; i++) {
     drawBox(guiBoxes[i]);
   }
+
+  tft.setFont(&FreeSans9pt7b);
+  tft.setCursor(250, 95);
+  tft.setTextColor(ILI9341_WHITE);
+  tft.print("kg");
 }
 
 void handleTouch(int tx, int ty) {
@@ -312,12 +323,11 @@ void outputCurrentWeight() {
     Serial.println("outputCurrentWeight() BEGIN");
   #endif
     // TFT Ausgabe
-    canvas.fillScreen(ILI9341_BLACK);
-    canvas.setCursor(0, 38); // Keine Ahnung warum, aber wenn man Font verwendet, muss Y höher gesetzt werden
-    canvas.setFont(&FreeSans24pt7b);
-    //canvas.setTextSize(5);
-    canvas.printf("%6.2f kg", currentWeight);
-    tft.drawBitmap(0, 65, canvas.getBuffer(), 330, 50, ILI9341_WHITE, ILI9341_BLACK); // Copy to screen
+    canvasWeight.fillScreen(ILI9341_BLACK);
+    canvasWeight.setCursor(0, canvasWeight.height()-15); // Die 0-Position ist unten links aber auf Höhe des Punktes
+    canvasWeight.setFont(&FreeSans48pt7b);
+    canvasWeight.printf("%6.1f", currentWeight);
+    tft.drawBitmap(0, 20, canvasWeight.getBuffer(), canvasWeight.width(), canvasWeight.height(), ILI9341_WHITE, ILI9341_BLACK); 
   #ifdef DEBUG
     Serial.println("outputCurrentWeight() END");
   #endif
