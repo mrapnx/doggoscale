@@ -10,8 +10,8 @@
 #include <XPT2046_Touchscreen.h>
 #include <HX711.h>
 
-#define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
-#define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
+//#define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+//#define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
 
 // --- Pin-Definitionen  ---
 
@@ -147,6 +147,9 @@ void handleTouch(int tx, int ty) {
 }
 
 void manualTare() {
+int16_t  x1, y1;
+uint16_t w, h;
+
   doTare();
   tft.setCursor(10, 210);
   tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
@@ -154,7 +157,8 @@ void manualTare() {
   tft.println("Tariert");
   delay(1000);
   tft.setCursor(10, 210);
-  tft.println("       ");
+  tft.getTextBounds("Tariert", 10, 210, &x1, &y1, &w, &h);
+  tft.fillRect(x1, y1, w, h, ILI9341_BLACK); // Lösche "Tariert" wieder
 }
 
 void doTare() {
@@ -311,11 +315,6 @@ void getCurrentWeight() {
       currentWeight = 0.0;
       Serial.println("scalePresent == false");
     }    
-  } else {
-    Serial.println("HX711 nicht mehr gefunden");
-    scalePresent = false;
-    currentWeight = 0.0;
-  }
   #endif
 
   #ifdef DEBUG
