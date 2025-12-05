@@ -1,14 +1,14 @@
 #include <Arduino.h>
 #include <SPI.h>
+#include <HX711.h>
 #include <Adafruit_GFX.h>
+#include <XPT2046_Touchscreen.h>
 #include <Adafruit_ILI9341.h>
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
 #include <FreeSans48pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
-#include <XPT2046_Touchscreen.h>
-#include <HX711.h>
 
 //#define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
 //#define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
@@ -69,7 +69,6 @@ double          value             = 0;
 long            raw               = 0;
 #endif
 
-
 // -- TFT + Touch Objekte --------------------
 // 320x240 ILI9341 Display
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
@@ -99,6 +98,7 @@ void onBoxConfigSave();
 void onBoxConfigCancel();
 void onBoxConfigInc();
 void onBoxConfigDec();
+void onBoxConfigCalib();
 
 // --- Zentrales Array mit allen Boxen ---
 GuiBox setupBoxes[] = {
@@ -114,12 +114,12 @@ GuiBox guiBoxes[] = {
 GuiBox configBoxes[] = {
 //   x,   y,   w,   h, labelSize, label,       color,    onTouch
   {  5,  170, 120, 60, 1,         "Speichern", ILI9341_GREEN,  onBoxConfigSave},
-  {190,  170, 120, 60, 1,         "Abbrechen", ILI9341_GREEN,  onBoxConfigCancel},
-  {250,   20,  60, 60, 2,         "+",         ILI9341_GREEN,  onBoxConfigInc},
-  {250,  100,  60, 60, 2,         "-",         ILI9341_GREEN,  onBoxConfigDec},
+  {170,  170, 140, 60, 1,         "Abbrechen", ILI9341_GREEN,  onBoxConfigCancel},
+  {170,   20,  60, 60, 2,         "+",         ILI9341_GREEN,  onBoxConfigInc},
+  {250,   20,  60, 60, 2,         "-",         ILI9341_GREEN,  onBoxConfigDec},
+  {170,   95, 140, 60, 1,         "Kalibr.",   ILI9341_GREEN,  onBoxConfigCalib},
 
 };
-
 
 GuiBoxSet menu[] = {
     { setupBoxes,   sizeof(setupBoxes) / sizeof(GuiBox) },
@@ -216,6 +216,11 @@ void doTare() {
     Serial.println("doTare() END");
   #endif
 }
+
+void onBoxConfigCalib() {
+  calibrateTouch();
+}
+
 
 void onBoxTara() {
   manualTare();
