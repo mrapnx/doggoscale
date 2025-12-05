@@ -62,6 +62,7 @@ float           tare              = 0.0;
 float           untarredWeight    = 0.0;
 float           lastWeight        = 0.0;
 float           currentWeight     = 0.0;
+float           newWeight         = 0.0;
 
 #ifdef DEBUG
 double          value             = 0;
@@ -74,29 +75,59 @@ long            raw               = 0;
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
 GFXcanvas1 canvasWeight(250, 85);
 XPT2046_Touchscreen ts(TOUCH_CS);
+int currentScreen = 0; // 0=Init-Bildschirm, 1=Hauptbildschirm, 2=Konfigurationsbildschirm
 
 // --- GUI Struktur --------------------
 typedef void (*CallbackFn)();
 
 struct GuiBox {
-  int x, y, w, h;
+  int x, y, w, h, textSize = 2;
   const char *label;
   uint16_t color;
   CallbackFn onTouch;
 };
 
+struct GuiBoxSet {
+    GuiBox* boxes;      // Array der GuiBoxen
+    size_t count;       // Anzahl Elemente
+};
+
 // Forward-Deklarationen der Callback-Funktionen
 void onBoxTara();
-
+void onBoxConf();
+void onBoxConfigSave();
+void onBoxConfigCancel();
+void onBoxConfigInc();
+void onBoxConfigDec();
 
 // --- Zentrales Array mit allen Boxen ---
-GuiBox guiBoxes[] = {
-//   x,   y,   w,   h,  label,         color,    onTouch
-  {190,  170, 120, 60, "Tara", ILI9341_GREEN,  onBoxTara},
+GuiBox setupBoxes[] = {
+};
 
+GuiBox guiBoxes[] = {
+//   x,   y,   w,   h, labelSize,  label,         color,    onTouch
+  {  5,  170, 120, 60, 2,          "Tara", ILI9341_GREEN,  onBoxTara},
+  {190,  170, 120, 60, 2,          "Set",  ILI9341_GREEN,  onBoxConf},
 
 };
-const int NUM_BOXES = sizeof(guiBoxes) / sizeof(guiBoxes[0]);
+
+GuiBox configBoxes[] = {
+//   x,   y,   w,   h, labelSize, label,       color,    onTouch
+  {  5,  170, 120, 60, 1,         "Speichern", ILI9341_GREEN,  onBoxConfigSave},
+  {190,  170, 120, 60, 1,         "Abbrechen", ILI9341_GREEN,  onBoxConfigCancel},
+  {250,   20,  60, 60, 2,         "+",         ILI9341_GREEN,  onBoxConfigInc},
+  {250,  100,  60, 60, 2,         "-",         ILI9341_GREEN,  onBoxConfigDec},
+
+};
+
+
+GuiBoxSet menu[] = {
+    { setupBoxes,   sizeof(setupBoxes) / sizeof(GuiBox) },
+    { guiBoxes,     sizeof(guiBoxes) / sizeof(GuiBox) },
+    { configBoxes,  sizeof(configBoxes) / sizeof(GuiBox) }
+};
+
+const size_t SET_COUNT = sizeof(menu) / sizeof(GuiBoxSet);
 
 // --- Forward-Deklarationen --------------------
 void calibrateTouch();
@@ -109,15 +140,16 @@ void getCurrentWeight();
 void outputCurrentWeight();
 void checkTouch();
 void checkAutoTare();
-
+void configMenu();
+void outputNewWeight();
+void drawConfigMenu();
 
 // --- Funktionen --------------------
 
 void drawBox(const GuiBox &box) {
-int16_t  x1, y1;
-uint16_t w, h;
-
-  tft.setTextSize(2);
+int16_t   x1, y1;
+uint16_t  w, h;
+  tft.setTextSize(box.textSize);
   tft.setTextColor(box.color);
   tft.getTextBounds(box.label, box.x, box.y, &x1, &y1, &w, &h);
   tft.drawRect(box.x, box.y, box.w, box.h, box.color);
@@ -125,20 +157,28 @@ uint16_t w, h;
   tft.print(box.label);
 }
 
-void drawGui() {
-  for (int i = 0; i < NUM_BOXES; i++) {
-    drawBox(guiBoxes[i]);
-  }
+void drawBoxes(const int menuNo) {
+  tft.fillScreen(ILI9341_BLACK);
+  for (int i = 0; i < menu[menuNo].count; i++) {
+    drawBox(menu[menuNo].boxes[i]);
+  } 
+}
 
+void drawGui() {
   tft.setFont(&FreeSans9pt7b);
+  drawBoxes(1); // Hauptmenü
   tft.setCursor(250, 95);
   tft.setTextColor(ILI9341_WHITE);
   tft.print("kg");
 }
 
+void drawConfigMenu() {
+  drawBoxes(2); // Konfigurationsmenü
+}
+
 void handleTouch(int tx, int ty) {
-  for (int i = 0; i < NUM_BOXES; i++) {
-    GuiBox &b = guiBoxes[i];
+  for (int i = 0; i < menu[currentScreen].count; i++) {
+    GuiBox &b = menu[currentScreen].boxes[i];
     if (tx >= b.x && tx <= b.x + b.w &&
         ty >= b.y && ty <= b.y + b.h) {
       if (b.onTouch) b.onTouch();
@@ -147,17 +187,19 @@ void handleTouch(int tx, int ty) {
 }
 
 void manualTare() {
+int       x = 10;
+int       y = 140;  
 int16_t  x1, y1;
 uint16_t w, h;
 
   doTare();
-  tft.setCursor(10, 210);
+  tft.setCursor(x, y);
   tft.setTextColor(ILI9341_GREEN, ILI9341_BLACK);
   tft.setFont(&FreeSans9pt7b);
   tft.println("Tariert");
   delay(1000);
-  tft.setCursor(10, 210);
-  tft.getTextBounds("Tariert", 10, 210, &x1, &y1, &w, &h);
+  tft.setCursor(x, y);
+  tft.getTextBounds("Tariert", x, y, &x1, &y1, &w, &h);
   tft.fillRect(x1, y1, w, h, ILI9341_BLACK); // Lösche "Tariert" wieder
 }
 
@@ -177,6 +219,57 @@ void doTare() {
 
 void onBoxTara() {
   manualTare();
+}
+
+void onBoxConf() {
+  configMenu();
+}
+
+void onBoxConfigSave() {
+  Serial.println("Einstellungen Speichern");
+}
+
+void onBoxConfigCancel() {
+  Serial.println("Einstellungen abbrechen");
+  currentScreen = 1;
+  drawGui();
+}
+
+void onBoxConfigInc() {
+  Serial.println("+");
+  newWeight = newWeight + 0.1;
+  outputNewWeight();
+}
+
+void onBoxConfigDec() {
+  Serial.println("-");
+  newWeight = newWeight - 0.1;
+  outputNewWeight();
+}
+
+void outputNewWeight() {
+  tft.setCursor(8, 80);
+  tft.print("=>");
+  tft.setCursor(40, 80);
+  tft.printf("%6.1f", newWeight);
+}
+
+void configMenu() {
+  Serial.println("Einstellungen aufrufen");
+  currentScreen = 2;
+  drawConfigMenu();
+  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+  tft.setFont();
+  tft.setCursor(40, 50);
+  tft.setTextSize(3);
+  tft.printf("%6.1f", currentWeight);
+  newWeight = currentWeight;
+  outputNewWeight();
+  while (currentScreen == 2) {
+    checkTouch();
+    delay(100);
+  }
+  Serial.println("Einstellungen verlassen");
 }
 
 void calibrateTouch() {
@@ -398,9 +491,8 @@ void setup() {
     tft.println("Waage bereit...       ");
   #endif
   delay(500);
-  tft.fillScreen(ILI9341_BLACK);
-
   drawGui();
+  currentScreen = 1;
 }
 
 void loop() {
