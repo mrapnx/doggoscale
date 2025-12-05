@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <HX711.h>
+#include <EEPROM.h>
 #include <Adafruit_GFX.h>
 #include <XPT2046_Touchscreen.h>
 #include <Adafruit_ILI9341.h>
@@ -49,6 +50,13 @@ struct CalibrationData {
   char    foot           [5]  = "MRAe";
 };
 CalibrationData calib;
+
+// -- Speicher --------------------
+// Speicheradresse im EEPROM
+const int EEPROM_ADDR = 0;
+
+// EEPROM-Größe festlegen (ESP8266 max 4096)
+const int EEPROM_SIZE = 512;
 
 // -- Waage --------------------
 HX711           scale;
@@ -143,8 +151,80 @@ void checkAutoTare();
 void configMenu();
 void outputNewWeight();
 void drawConfigMenu();
+void loadOrInitConfigData();
+bool loadConfigData();
+void saveConfigData();
 
 // --- Funktionen --------------------
+
+void loadOrInitConfigData() {
+  if (!loadConfigData()) {
+    Serial.println("Nutze Standard-Konfiguration und speichere diese.");
+    saveConfigData();
+  } else {
+    Serial.println("Konfiguration erfolgreich geladen: ");
+    Serial.print("Touchscreen MinX: ");
+    Serial.println(calib.tsMinX);
+    Serial.print("Touchscreen MaxX: ");
+    Serial.println(calib.tsMaxX);
+    Serial.print("Touchscreen MinY: ");
+    Serial.println(calib.tsMinY);
+    Serial.print("Touchscreen MaxY: ");
+    Serial.println(calib.tsMaxY);
+    Serial.print("Scale Calibration: ");
+    Serial.println(calib.scaleCalibration);
+  }
+}
+
+bool loadConfigData() {
+  EEPROM.begin(EEPROM_SIZE);
+
+  Serial.println("Loading configuration data...");
+
+  CalibrationData temp;
+
+  // Aus EEPROM lesen
+  uint8_t* ptr = (uint8_t*)&temp;
+  for (unsigned int i = 0; i < sizeof(CalibrationData); i++) {
+    ptr[i] = EEPROM.read(EEPROM_ADDR + i);
+  }
+
+  EEPROM.end();
+
+  // Validität prüfen
+  if (strncmp(temp.head, "MRAb", 4) != 0) {
+    Serial.println("ERROR: HEADER mismatch -> Data invalid!");
+    return false;
+  }
+
+  if (strncmp(temp.foot, "MRAe", 4) != 0) {
+    Serial.println("ERROR: FOOTER mismatch -> Data invalid!");
+    return false;
+  }
+
+  // Alles ok → übernehmen
+  calib = temp;
+
+  Serial.println("Calibration data loaded successfully.");
+  return true;
+}
+
+void saveConfigData() {
+  EEPROM.begin(EEPROM_SIZE);
+
+  Serial.println("Saving calibration data...");
+
+  // calib ins EEPROM schreiben
+  uint8_t* ptr = (uint8_t*)&calib;
+  for (unsigned int i = 0; i < sizeof(CalibrationData); i++) {
+    EEPROM.write(EEPROM_ADDR + i, ptr[i]);
+  }
+
+  EEPROM.commit();
+  EEPROM.end();
+
+  Serial.println("Calibration data saved.");
+}
 
 void drawBox(const GuiBox &box) {
 int16_t   x1, y1;
@@ -231,13 +311,35 @@ void onBoxConf() {
 }
 
 void onBoxConfigSave() {
-  Serial.println("Einstellungen Speichern");
+float diff = 0;
+  Serial.println("Einstellungen Speichern:");
+  diff = currentWeight / newWeight;
+  Serial.print("currentWeight: ");
+  Serial.print(currentWeight);
+  Serial.print(" / newWeight: "); 
+  Serial.print(newWeight);
+  Serial.print(" = diff:");
+  Serial.print(diff);
+  Serial.print(" => neuer Kalibrierwert: calib.scaleCalibration ");
+  Serial.print(calib.scaleCalibration);
+  Serial.print(" * diff ");
+  Serial.print(diff);
+  Serial.print(" = ");
+  Serial.println(calib.scaleCalibration * diff);
+  calib.scaleCalibration = calib.scaleCalibration * diff;
+  #ifdef DEBUG
+    Serial.print("Alter Kalibrierwert: ");
+    calib.scaleCalibration = -21; // Reset auf Standardwert vor Berechnung
+    Serial.println(calib.scaleCalibration);
+  #endif
+  saveConfigData();
+  scale.set_scale(calib.scaleCalibration);
+  currentScreen = 1;
 }
 
 void onBoxConfigCancel() {
   Serial.println("Einstellungen abbrechen");
   currentScreen = 1;
-  drawGui();
 }
 
 void onBoxConfigInc() {
@@ -274,6 +376,7 @@ void configMenu() {
     checkTouch();
     delay(100);
   }
+  drawGui();
   Serial.println("Einstellungen verlassen");
 }
 
@@ -456,6 +559,9 @@ void setup() {
   while (!Serial) {}
   Serial.println();
   Serial.println("DoggoScale!");
+
+  // Konfig laden
+  loadOrInitConfigData();
 
   // TFT starten
   tft.begin();
