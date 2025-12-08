@@ -34,7 +34,7 @@
 //#define VCC         3V
 
 //**  Wägezellencontroller HX711
-//#define VCC         3V
+//#define VCC         3V   
   #define HX711_SCK   D1
   #define HX711_DT    D2 
 //#define GND         G
@@ -72,10 +72,8 @@ float           lastWeight        = 0.0;
 float           currentWeight     = 0.0;
 float           newWeight         = 0.0;
 
-#ifdef DEBUG
 double          value             = 0;
 long            raw               = 0;
-#endif
 
 // -- TFT + Touch Objekte --------------------
 // 320x240 ILI9341 Display
@@ -106,7 +104,8 @@ void onBoxConfigSave();
 void onBoxConfigCancel();
 void onBoxConfigInc();
 void onBoxConfigDec();
-void onBoxConfigCalib();
+void onBoxConfigTouchCalib();
+void onBoxConfigScaleCalib();
 
 // --- Zentrales Array mit allen Boxen ---
 GuiBox setupBoxes[] = {
@@ -120,25 +119,26 @@ GuiBox guiBoxes[] = {
 };
 
 GuiBox configBoxes[] = {
-//   x,   y,   w,   h, labelSize, label,       color,    onTouch
-  {  5,  170, 120, 60, 1,         "Speichern", ILI9341_GREEN,  onBoxConfigSave},
-  {170,  170, 140, 60, 1,         "Abbrechen", ILI9341_GREEN,  onBoxConfigCancel},
-  {170,   20,  60, 60, 2,         "+",         ILI9341_GREEN,  onBoxConfigInc},
-  {250,   20,  60, 60, 2,         "-",         ILI9341_GREEN,  onBoxConfigDec},
-  {170,   95, 140, 60, 1,         "Kalibr.",   ILI9341_GREEN,  onBoxConfigCalib},
-
+//   x,   y,   w,   h, labelSize, label,          color,          onTouch
+  {  5,  170, 140, 60, 1,         "Speichern",    ILI9341_GREEN,  onBoxConfigSave},
+  {170,  170, 140, 60, 1,         "Abbrechen",    ILI9341_GREEN,  onBoxConfigCancel},
+  {170,   20,  60, 60, 2,         "+",            ILI9341_GREEN,  onBoxConfigInc},
+  {250,   20,  60, 60, 2,         "-",            ILI9341_GREEN,  onBoxConfigDec},
+  {  5,   95, 140, 60, 1,         "Waage Kalib.", ILI9341_GREEN,  onBoxConfigScaleCalib},
+  {170,   95, 140, 60, 1,         "Touch Kalib.", ILI9341_GREEN,  onBoxConfigTouchCalib},
 };
 
 GuiBoxSet menu[] = {
-    { setupBoxes,   sizeof(setupBoxes) / sizeof(GuiBox) },
-    { guiBoxes,     sizeof(guiBoxes) / sizeof(GuiBox) },
-    { configBoxes,  sizeof(configBoxes) / sizeof(GuiBox) }
+    { setupBoxes,   sizeof(setupBoxes)  / sizeof(GuiBox) },
+    { guiBoxes,     sizeof(guiBoxes)    / sizeof(GuiBox) },
+    { configBoxes,  sizeof(configBoxes) / sizeof(GuiBox) },
 };
 
 const size_t SET_COUNT = sizeof(menu) / sizeof(GuiBoxSet);
 
 // --- Forward-Deklarationen --------------------
 void calibrateTouch();
+void calibrateScale();
 void drawBox(const GuiBox &box);
 void drawGui();
 void handleTouch(int tx, int ty);
@@ -154,6 +154,10 @@ void drawConfigMenu();
 void loadOrInitConfigData();
 bool loadConfigData();
 void saveConfigData();
+void setupTft();
+void setupTouch();
+void setupScale();
+void getAllScaleValue();
 
 // --- Funktionen --------------------
 
@@ -297,10 +301,13 @@ void doTare() {
   #endif
 }
 
-void onBoxConfigCalib() {
+void onBoxConfigTouchCalib() {
   calibrateTouch();
 }
 
+void onBoxConfigScaleCalib() {
+  calibrateScale();
+}
 
 void onBoxTara() {
   manualTare();
@@ -308,6 +315,43 @@ void onBoxTara() {
 
 void onBoxConf() {
   configMenu();
+}
+
+void calibrateScale() {
+  float measuredUnits = 0.0;
+  Serial.print("Starte Waagen-Kalibrierung auf");
+  Serial.printf("%6.1f kg\n", newWeight);
+  tft.fillScreen(ILI9341_BLACK);
+  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+  tft.setCursor(10, 10);
+  tft.setTextSize(1);
+  // tft.setFont(&FreeSans9pt7b);
+  tft.print("Waage Kalibrieren auf ");
+  tft.printf("%6.1f kg\n", newWeight);
+  tft.println("Bitte Gewicht in 5 Sek. entfernen");
+  Serial.println("Warte auf Entfernen des Gewichts...");
+  delay(5000);
+  Serial.println("Nulle");
+  scale.tare();
+  scale.set_scale();
+  tft.print("Genullt, jetzt Gewicht von");
+  tft.printf("%6.1f kg ", newWeight);
+  tft.println("auflegen (5 Sek.)");
+  Serial.println("Warte auf Auflegen des Gewichts...");
+  delay(5000);
+  tft.println("Messe...");
+  Serial.println("Messe...");
+  getAllScaleValue();
+  Serial.println("scale.get_units");
+  measuredUnits = scale.get_units(10);
+  Serial.print("measuredUnits: ");
+  Serial.println(measuredUnits);
+  tft.print("Units: ");
+  tft.printf("%6.2f\n", measuredUnits);
+  tft.print("Raw: ");
+  tft.printf("%ld\n", raw);
+  tft.print("Value: ");
+  tft.printf("%f\n", value);
 }
 
 void onBoxConfigSave() {
@@ -333,7 +377,7 @@ float diff = 0;
     Serial.println(calib.scaleCalibration);
   #endif
   saveConfigData();
-  scale.set_scale(calib.scaleCalibration);
+  scale.set_scale(-20.9);
   currentScreen = 1;
 }
 
@@ -355,9 +399,9 @@ void onBoxConfigDec() {
 }
 
 void outputNewWeight() {
-  tft.setCursor(8, 80);
+  tft.setCursor(8, 40);
   tft.print("=>");
-  tft.setCursor(40, 80);
+  tft.setCursor(40, 40);
   tft.printf("%6.1f", newWeight);
 }
 
@@ -367,7 +411,7 @@ void configMenu() {
   drawConfigMenu();
   tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
   tft.setFont();
-  tft.setCursor(40, 50);
+  tft.setCursor(40, 10);
   tft.setTextSize(3);
   tft.printf("%6.1f", currentWeight);
   newWeight = currentWeight;
@@ -469,6 +513,16 @@ void checkAutoTare() {
   #endif
 }
 
+void getAllScaleValue() {
+  Serial.println("scale.read_average: ");
+  raw = scale.read_average(samplesPerReading);
+  Serial.printf("Raw: %ld \n", raw);
+
+  Serial.println("scale.get_value");
+  value = scale.get_value(samplesPerReading);
+  Serial.printf("Value: %.5f \n", value);
+}
+
 void getCurrentWeight() {
   #ifdef DEBUG
     Serial.println("getCurrentWeight() BEGIN");
@@ -490,14 +544,7 @@ void getCurrentWeight() {
         checkAutoTare();
       
         #ifdef DEBUG
-          Serial.println("scale.read_average");
-          raw = scale.read_average(samplesPerReading);
-          Serial.printf("Raw: %ld \n", raw);
-
-          Serial.println("scale.get_value");
-          value = scale.get_value(samplesPerReading);
-          Serial.printf("Value: %.5f \n", value);
-
+          getAllScaleValue();
           tft.setTextSize(1);
           tft.setCursor(0, 100);
           Serial.println("TFT Ausgabe Debug Werte");
@@ -554,34 +601,16 @@ void checkTouch() {
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  while (!Serial) {}
-  Serial.println();
-  Serial.println("DoggoScale!");
-
-  // Konfig laden
-  loadOrInitConfigData();
-
-  // TFT starten
-  tft.begin();
-  Serial.print("Display initialisiert: ");
-  tft.setFont(&FreeSans9pt7b);
-  Serial.print(tft.width());
-  Serial.print("x");  
-  Serial.println(tft.height()); 
-  tft.setRotation(1); // Querformat
-  tft.fillScreen(ILI9341_BLACK);
-
-  // Touch initialisieren
+void setupTouch() {
   if (ts.begin()) {
     Serial.println("XPT2046 bereit");
     ts.setRotation(3);
   } else {
     Serial.println("XPT2046 nicht gefunden!");
   }
+}
 
-  // HX711 initialisieren
+void setupScale() {
   #ifdef DRYRUN
     Serial.println("DRYRUN Modus: Simuliere HX711 Waage");
   #else
@@ -596,11 +625,43 @@ void setup() {
     }
 
     scalePresent = true;
-    scale.set_scale(calib.scaleCalibration);
+    scale.set_gain(128); // Kanal A, Gain 128
+    scale.set_scale(calib.scaleCalibration); // 
     scale.tare();
     Serial.println("HX711 bereit, Nullpunkt gesetzt.");
     tft.println("Waage bereit...       ");
   #endif
+}
+
+void setupTft() {
+  tft.begin();
+  Serial.print("Display initialisiert: ");
+  tft.setFont(&FreeSans9pt7b);
+  Serial.print(tft.width());
+  Serial.print("x");  
+  Serial.println(tft.height()); 
+  tft.setRotation(1); // Querformat
+  tft.fillScreen(ILI9341_BLACK);
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) {}
+  Serial.println();
+  Serial.println("DoggoScale!");
+
+  // Konfig laden
+  loadOrInitConfigData();
+
+  // TFT starten
+  
+  setupTft();
+  // Touch initialisieren
+  setupTouch();
+
+  // HX711 initialisieren
+  setupScale();
+
   delay(500);
   drawGui();
   currentScreen = 1;
