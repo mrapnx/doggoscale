@@ -51,6 +51,14 @@ struct CalibrationData {
 };
 CalibrationData calib;
 
+// Datenstruktur für Gewichtsmessungen
+struct WeightSample {
+  float         value;
+  unsigned long ts;
+};
+
+
+
 // -- Speicher --------------------
 // Speicheradresse im EEPROM
 const int EEPROM_ADDR = 0;
@@ -74,6 +82,16 @@ float           newWeight         = 0.0;
 
 double          value             = 0;
 long            raw               = 0;
+
+// --- Auto-Tare Parameter ---
+unsigned long   tareStableSince     = 0;      // Zeitpunkt, seit dem Gewicht stabil ist
+unsigned long   tareCheckTime       = 3000;   // ms: wie lange Gewicht stabil sein muss
+float           tareCheckTolerance  = 0.2;  // kg: maximale Abweichung
+const uint16_t  MAX_SAMPLES         = 100;
+uint16_t        sampleCount         = 0;
+unsigned long   stableSince         = 0;
+WeightSample    weightSamples[MAX_SAMPLES];
+
 
 // -- TFT + Touch Objekte --------------------
 // 320x240 ILI9341 Display
@@ -158,8 +176,20 @@ void setupTft();
 void setupTouch();
 void setupScale();
 void getAllScaleValue();
+void pruneOldSamples(unsigned long now);
 
 // --- Funktionen --------------------
+
+void pruneOldSamples(unsigned long now) {
+uint16_t j = 0;
+  for (uint16_t i = 0; i < sampleCount; i++) {
+    if (now - weightSamples[i].ts <= tareCheckTime) {
+      weightSamples[j++] = weightSamples[i];
+    }
+  }
+  sampleCount = j;
+}
+
 
 void loadOrInitConfigData() {
   if (!loadConfigData()) {
@@ -318,7 +348,8 @@ void onBoxConf() {
 }
 
 void calibrateScale() {
-  float measuredUnits = 0.0;
+float measuredUnits = 0.0;
+
   Serial.print("Starte Waagen-Kalibrierung auf");
   Serial.printf("%6.1f kg\n", newWeight);
   tft.fillScreen(ILI9341_BLACK);
@@ -356,6 +387,7 @@ void calibrateScale() {
 
 void onBoxConfigSave() {
 float diff = 0;
+
   Serial.println("Einstellungen Speichern:");
   diff = currentWeight / newWeight;
   Serial.print("currentWeight: ");
@@ -425,6 +457,8 @@ void configMenu() {
 }
 
 void calibrateTouch() {
+int rx1, ry1, rx2, ry2, rx3, ry3, rx4, ry4;
+
   tft.fillScreen(ILI9341_BLACK);
   tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
   tft.setTextSize(2);
@@ -449,8 +483,6 @@ void calibrateTouch() {
     while (ts.touched()) delay(10);
     delay(200);
   };
-
-  int rx1, ry1, rx2, ry2, rx3, ry3, rx4, ry4;
 
   // linke obere Ecke
   measurePoint(20, 20, rx1, ry1);
@@ -477,50 +509,87 @@ void calibrateTouch() {
 
 
 void checkAutoTare() {
-  #ifdef DEBUG
-    Serial.println("checkAutoTare() BEGIN");
-  #endif
-  float difference = 0;
+  unsigned long now         = millis();
+  float         difference  = 0;
+  float         wMin        = 0;
+  float         wMax        = 0;
+  float         spread      = 0;
 
-  // Wenn seit der letzten Prüfung genug Zeit vergangen ist
-  if (millis() > (lastTareCheck + tareCheckInterval)) {
-    // Wenn der aktuelle Messwert negativ ist
-    difference = currentWeight - lastWeight;
-    if (difference < 0) {
-      // ins Positive drehen
-      difference = -difference;
-    } 
-
-    Serial.print("Auto-Tare Check: ");
-    Serial.print("currentWeight: ");
-    Serial.print(currentWeight);
-    Serial.print(" - lastWeight: ");
-    Serial.print(lastWeight);
-    // wenn Gewicht stabil ist
-    Serial.print(" -> difference: ");
-    Serial.print(difference);
-    if (difference < tareThreshold) { 
-      Serial.print(" < tareThreshold: ");
-      Serial.print(tareThreshold);
-      Serial.println(" => Automatisch tariert.");
-      doTare();
-    } else {
-      Serial.println(" >= tareThreshold: kein Tare.");
-    }
+  // neuen Messwert ablegen
+  if (sampleCount < MAX_SAMPLES) {
+    weightSamples[sampleCount++] = { currentWeight, now };
   }
-  #ifdef DEBUG
-    Serial.println("checkAutoTare() END");
-  #endif
+
+  // alte Samples verwerfen (Zeitfenster)
+  pruneOldSamples(now);
+
+  if (sampleCount < 2) {
+    stableSince = 0;
+    return;
+  }
+
+  wMin = weightSamples[0].value;
+  wMax = weightSamples[0].value;
+
+  for (uint16_t i = 1; i < sampleCount; i++) {
+    wMin = min(wMin, weightSamples[i].value);
+    wMax = max(wMax, weightSamples[i].value);
+  }
+
+  spread = wMax - wMin;
+
+#ifdef DEBUG
+  Serial.printf("Stability(time): samples=%u spread=%.3f tareCheckTolerance=%.2f \n", sampleCount, spread, tareCheckTolerance);
+  Serial.printf("now=%lu - weightSamples[0].ts)=%lu = %lu tarecheckTime=%lu \n", now, weightSamples[0].ts, now - weightSamples[0].ts, tareCheckTime);
+#endif
+
+  // --- Stabilitätslogik ---
+  if (spread <= tareCheckTolerance) {
+
+    // Stabilität beginnt JETZT
+    if (stableSince == 0) {
+      stableSince = now;
+
+      #ifdef DEBUG
+      Serial.println("Stabilitätsphase gestartet");
+    #endif
+    }
+
+    // Stabil genug lange?
+    if (now - stableSince >= tareCheckTime) {
+      Serial.printf("Auto-Tare Check: currentWeight: %.2f - lastWeight: %.2f", currentWeight, lastWeight);
+      difference = currentWeight - lastWeight;
+      if (difference < 0) {
+        // ins Positive drehen
+        difference = -difference;
+      } 
+
+      Serial.printf(" -> difference: %.2f", difference);
+      if (difference < tareThreshold) { 
+        Serial.printf(" < tareThreshold: %.2f => Automatisch tariert. \n", tareThreshold);
+        sampleCount = 0;
+        stableSince = 0;
+        doTare();
+      } else {
+        Serial.printf(" >= tareThreshold: %.2f kein Tare.\n", tareThreshold);
+      }
+    }
+
+  } else {
+    // Instabil → Reset
+    stableSince = 0;
+  }
 }
 
-void getAllScaleValue() {
-  Serial.println("scale.read_average: ");
-  raw = scale.read_average(samplesPerReading);
-  Serial.printf("Raw: %ld \n", raw);
 
-  Serial.println("scale.get_value");
+void getAllScaleValue() {
+  Serial.print("scale.read_average: ");
+  raw = scale.read_average(samplesPerReading);
+  Serial.printf(" Raw: %ld \n", raw);
+
+  Serial.print("scale.get_value:");
   value = scale.get_value(samplesPerReading);
-  Serial.printf("Value: %.5f \n", value);
+  Serial.printf(" Value: %.5f \n", value);
 }
 
 void getCurrentWeight() {
