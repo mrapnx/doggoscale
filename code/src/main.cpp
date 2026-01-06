@@ -11,8 +11,8 @@
 #include <FreeSans48pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 
-//#define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
-//#define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
+// #define DEBUG   // Sammelt mehr Werte und macht die serielle Ausgabe gesprächiger
+// #define DRYRUN  // Simuliert ein eingeschlossenes HX711 ohne dass es angeschlossen ist 
 
 // --- Pin-Definitionen  ---
 
@@ -46,7 +46,8 @@ struct CalibrationData {
   int     tsMaxX              = 3503;
   int     tsMinY              = 544;
   int     tsMaxY              = 3610;
-  float   scaleCalibration    = -21; // -837.8887096774194; // -21;
+  float   scaleCalibration    = -21; // -837.8887096774194; // Kalibrierwert für die Waage, muss scheinbar 21 sein, keine Ahnung, warum
+  float   correction          = 1;   // Korrektur-Faktor. Wird mit dem gemessenen Gewicht multipliziert
   char    foot           [5]  = "MRAe";
 };
 CalibrationData calib;
@@ -86,7 +87,7 @@ long            raw               = 0;
 // --- Auto-Tare Parameter ---
 unsigned long   tareStableSince     = 0;      // Zeitpunkt, seit dem Gewicht stabil ist
 unsigned long   tareCheckTime       = 3000;   // ms: wie lange Gewicht stabil sein muss
-float           tareCheckTolerance  = 0.2;  // kg: maximale Abweichung
+float           tareCheckTolerance  = 0.2;    // kg: maximale Abweichung
 const uint16_t  MAX_SAMPLES         = 100;
 uint16_t        sampleCount         = 0;
 unsigned long   stableSince         = 0;
@@ -207,6 +208,8 @@ void loadOrInitConfigData() {
     Serial.println(calib.tsMaxY);
     Serial.print("Scale Calibration: ");
     Serial.println(calib.scaleCalibration);
+    Serial.print("Weight Correction: ");
+    Serial.println(calib.correction);
   }
 }
 
@@ -386,30 +389,21 @@ float measuredUnits = 0.0;
 }
 
 void onBoxConfigSave() {
-float diff = 0;
-
   Serial.println("Einstellungen Speichern:");
-  diff = currentWeight / newWeight;
-  Serial.print("currentWeight: ");
-  Serial.print(currentWeight);
-  Serial.print(" / newWeight: "); 
+  calib.correction =  newWeight / currentWeight;
+  Serial.print(" newWeight: "); 
   Serial.print(newWeight);
-  Serial.print(" = diff:");
-  Serial.print(diff);
-  Serial.print(" => neuer Kalibrierwert: calib.scaleCalibration ");
-  Serial.print(calib.scaleCalibration);
-  Serial.print(" * diff ");
-  Serial.print(diff);
-  Serial.print(" = ");
-  Serial.println(calib.scaleCalibration * diff);
-  calib.scaleCalibration = calib.scaleCalibration * diff;
+  Serial.print("/ currentWeight: ");
+  Serial.print(currentWeight);
+  Serial.print(" = neuer Korrekturwert: calib.correction ");
+  Serial.println(calib.correction);
   #ifdef DEBUG
     Serial.print("Alter Kalibrierwert: ");
     calib.scaleCalibration = -21; // Reset auf Standardwert vor Berechnung
-    Serial.println(calib.scaleCalibration);
+    Serial.print(calib.scaleCalibration);
+    Serial.println(" wurde gesetzt");
   #endif
   saveConfigData();
-  scale.set_scale(-20.9);
   currentScreen = 1;
 }
 
@@ -606,7 +600,7 @@ void getCurrentWeight() {
       // Gib der Waage einen Timeout mit, nachdem sie aufgeben soll
       if (scale.wait_ready_timeout(scaleTimeout)) {
         untarredWeight = scale.get_units(samplesPerReading) / 1000; // Mittelwert über [samplesPerReading] Messungen
-        currentWeight = untarredWeight - tare;
+        currentWeight = (untarredWeight - tare) * calib.correction;
         // Serial Ausgabe
         Serial.printf("Gewicht: %.2f kg\n", currentWeight);
     
@@ -621,6 +615,7 @@ void getCurrentWeight() {
           tft.printf("currentWeight: %.5f   \n",  currentWeight);
           tft.printf("lastWeight: %.5f   \n",     lastWeight); 
           tft.printf("tare: %.5f   \n",           tare); 
+          tft.printf("correction: %.5f   \n",           calib.correction); 
         #endif    
       } else {
         currentWeight = 0.0;
