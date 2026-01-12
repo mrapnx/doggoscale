@@ -1,5 +1,8 @@
 # Doggoscale!
 
+[(English translation below)](#doggoscale-english)
+
+
 Einfache Waage für Hunde.
 
 # Funktionen
@@ -66,3 +69,73 @@ Deckel: [housing/doggoscale housing display lid.3mf](https://github.com/mrapnx/d
 + Platform.IO installieren
 + Mikrocontroller anschließen
 + Builden und uploaden
+
+
+# Doggoscale (english)!
+
+Simple scale for dogs.
+
+# Features
++ Auto-tare: If you put something on it, e.g. a bowl, the scale automatically tares itself to 0 based on a weight threshold. When the dog steps on, the scale measures the weight and does not re-tare (behaviour as above).
++ Touch screen
++ Weight adjustment: You can easily adjust the measured weight to the actual weight.
++ Display and weighing unit separated: An Ethernet connection cable connects the display to the weighing unit.
++ USB power
+
+<img width="678" src="https://github.com/user-attachments/assets/66dab49f-7863-4c61-ac8d-f27c7db0dad3" />
+
+# Build your own
+
+## 1. Buy materials
++ 1x screen-printed board in the desired size and thickness ([Link](https://www.amazon.de/dp/B01HS0Y0BY))
++ 4x load cells ([Link](https://www.amazon.de/dp/B07FMN1DBN))
++ 1x load cell controller HX711 ([Link](https://www.amazon.de/dp/B07FMN1DBN))
++ 1x microcontroller ESP8266 ESP-12F ([Link](https://www.amazon.de/dp/B07Z68HYW1))
++ 1x 2.8" LCD TFT touch display, 320x240 resolution, ILI9341 driver, SPI ([Link](https://www.amazon.de/dp/B0CP7S2X7V))
++ 1x micro-USB mounting connector ([Link](https://www.amazon.de/dp/B0798PW4DB))
++ 1x RJ45 breakout board ([Link](https://www.amazon.de/dp/B083C4LYQL))
++ 1x RJ45 mounting coupler ([Link](https://www.amazon.de/dp/B00B7AGLXM))
++ Perfboard
++ Pin headers
++ Soldering wire
++ Hot glue
++ For enclosure: 3D printer with PLA filament
+
+## 2. Wiring
+
+### Breadboard
+<img width="2798" height="2496" alt="doggoscale breadboard" src="https://github.com/user-attachments/assets/91c72137-a566-4fa0-ab27-0d8a39e3317a" />
+
+Fritzing file for breadboard: [doggoscale breadboard.fzz](https://github.com/mrapnx/doggoscale/blob/main/doggoscale%20breadboard.fzz)
+
+### Stripboard
+<img width="3144" height="3186" alt="doggoscale strip board" src="https://github.com/user-attachments/assets/6b69abdf-76e3-4edf-99bd-8f8329a60f81" />
+
+Fritzing file for stripboard: [doggoscalestrip board.fzz](https://github.com/mrapnx/doggoscale/blob/main/doggoscale%20strip%20board.fzz)
+
+## 3. Print (or have printed) the enclosure
+
+### Weighing unit
+#### Feet for the load cells
+[housing/doggoscale weighting cell fixture.3mf](https://github.com/mrapnx/doggoscale/blob/main/housing/doggoscale%20weighting%20cell%20fixture.3mf)
+
+#### Weighing unit enclosure
+Base: [housing/doggoscale housing connection box base.3mf](https://github.com/mrapnx/doggoscale/blob/main/housing/doggoscale%20housing%20connection%20box%20base.3mf)
+
+Lid: [housing/doggoscale housing connection box lid.3mf](https://github.com/mrapnx/doggoscale/blob/main/housing/doggoscale%20housing%20connection%20box%20lid.3mf)
+
+### Display
+<img width="678" height="613" alt="display_front" src="https://github.com/user-attachments/assets/5d7144a8-d492-4039-9c17-dc4cc80fd737" />
+<img width="678" height="666" alt="display_back" src="https://github.com/user-attachments/assets/f4ad42a3-08fc-43b8-8c8f-d92519a32a71" />
+
+Base: [housing/doggoscale housing display base.3mf](https://github.com/mrapnx/doggoscale/blob/main/housing/doggoscale%20housing%20display%20base.3mf)
+
+Lid: [housing/doggoscale housing display lid.3mf](https://github.com/mrapnx/doggoscale/blob/main/housing/doggoscale%20housing%20display%20lid.3mf)
+
+## 4. Mount the PCB, display and connectors (hot glue helps)
+
+## 5. Flash the microcontroller
++ Set up VS Code
++ Install Platform.IO
++ Connect the microcontroller
++ Build and upload
